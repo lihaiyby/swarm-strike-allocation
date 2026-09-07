@@ -1,0 +1,41 @@
+# 敌机类型表（按威胁作用对象分类，方案04-v3 评审确认）
+# p_kill = 我方单机对该类型的毁伤概率（由机动档映射：机动10/5/2 → 0.4/0.7/0.9）
+types:
+  - name: recon            # 对信息型——侦察型
+    threat_axis: info
+    value: 2
+    ratio: 0.30
+    maneuver: 10
+    p_kill: 0.4
+    speed_mps: [55, 60]
+    lethality: null        # 对我方无杀伤
+
+  - name: suicide_strike   # 对基地型——自杀攻击型（主力威胁）
+    threat_axis: base
+    value: 5
+    ratio: 0.50
+    maneuver: 5
+    p_kill: 0.7
+    speed_mps: [50, 55]
+    lethality: null        # 目标是基地，不攻击我方无人机
+
+  - name: fighter          # 对拦截机型——单点格斗型
+    threat_axis: interceptor
+    value: 10
+    ratio: 0.133           # 价值10档占20%，格斗:范围 = 2:1
+    maneuver: 5
+    p_kill: 0.7
+    speed_mps: [50, 55]
+    lethality: { mode: point, q: 0.2 }   # 遭遇时以概率 q 击落我方 1 架
+
+  - name: area_damage      # 对拦截机型——范围伤害型
+    threat_axis: interceptor
+    value: 10
+    ratio: 0.067
+    maneuver: 2
+    p_kill: 0.9
+    speed_mps: [50, 50]
+    lethality: { mode: area, q: 0.5, radius_m: 100 }  # 半径 r 内以概率 q 杀伤我方
+
+# 校验：ratio 合计 = 0.30 + 0.50 + 0.133 + 0.067 = 1.00
+# 价值档比例 = 10档(0.2) : 5档(0.5) : 2档(0.3) ✓

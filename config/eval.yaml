@@ -1,0 +1,19 @@
+# 统一评估参数
+kill_threshold: 0.9       # 歼灭判定：累积毁伤概率 ≥ 0.9 视为歼灭
+quota:
+  p_table: { "0.4": 5, "0.7": 2, "0.9": 1 }   # 达到 0.9 所需架数（校验用）
+time_limit_s: 1.0         # 单次分配求解耗时上限（超出进入惩罚函数）
+
+# 总评分权重【待定】：评审后填入，合计建议归一
+weights:
+  a_gain: null            # 打击总收益
+  b_threat: null          # 威胁消除率
+  c_stability: null       # 稳定性
+  d_cost: null            # 效费比
+  e_time: null            # 求解效率
+
+penalty:
+  over_force_per_unit: null   # 超兵力惩罚系数【待定】
+  overtime_per_s: null        # 超时惩罚系数【待定】
+
+monte_carlo: false        # 主评估用期望值口径；true 为掷骰子口径（附录用）

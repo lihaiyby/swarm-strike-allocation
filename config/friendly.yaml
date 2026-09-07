@@ -1,0 +1,7 @@
+# 我方无人机参数（方案04-v3 评审确认）
+count_ratio: 3            # 总数 = 3n（数量充足）
+speed_mps: [50, 60]       # 大于敌方最低速度 50 m/s
+unit_value: 1             # 单机价值（与敌方统一价值标准）
+max_range_m: R            # 最大航程 = 战场半径
+suicide: true             # 自杀式：单次打击后退出；已下达指令即冻结
+deploy: uniform_inner     # 初始位置：内球面（防线 700m）均匀随机
