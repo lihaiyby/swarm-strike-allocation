@@ -144,10 +144,23 @@ git log --oneline -3
 
 | 症状 | 原因 | 处理 |
 |---|---|---|
-| `git commit` 报 `Unable to create .git/index.lock: Permission denied` | DSH 沙箱的受限令牌写不进 `.git`（ACL 已补当前用户完全控制并验证，仍被拒） | **以完全权限（danger-full-access）执行 `git add/commit`** |
+| `git push` 报 `Connection was reset` / `Failed to connect ... port 443` | **不是网络不通**：本机系统代理 `127.0.0.1:7897` 开着，Edge 走它所以能上 GitHub；但 **git 不读 Windows Internet 设置**，`HTTP_PROXY`/`HTTPS_PROXY`/`git http.proxy` 皆空 → git 直连，TCP 能通、TLS 被重置 | 显式指定代理，见 §6.2 |
+| `git push` 报 `couldn't create signal pipe, Win32 error 5` 或 `could not read Username` | 沙箱禁止创建命名管道，git 凭据助手（Windows 凭据管理器）无法运行 | **以完全权限推送** |
+| `git commit` 报 `Unable to create .git/index.lock: Permission denied` | DSH 沙箱的受限令牌写不进 `.git`（ACL 已补当前用户完全控制并验证，仍被拒） | **以完全权限执行 `git add/commit`** |
 | `git clone/push` 报 `SEC_E_NO_CREDENTIALS` | 本机 `schannel` TLS 后端不可用 | 一律加 `-c http.sslBackend=openssl` |
-| `git push` 报 `Failed to connect to github.com port 443` / `Connection was reset` | 网络层不可达（非本地配置问题，重试无效） | 登记到 `docs/AI工作日志.md` 待推送队列，**下个会话先补推** |
 | `pytest` 报 `could not create cache path ... Permission denied` | 残留 `pytest-cache-files-*` 目录 | 已清理；如再出现，删除该目录即可 |
+
+### 6.2 推送三件套（复制即用）
+
+```bash
+git -c http.proxy=http://127.0.0.1:7897 \
+    -c https.proxy=http://127.0.0.1:7897 \
+    -c http.sslBackend=openssl push origin main
+```
+
+> **须以完全权限执行**（原因见 §6.1 第二行）。
+> 代理端口若变更，改 `7897` 即可；查当前端口：
+> `Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings' | Select ProxyServer`
 
 ---
 

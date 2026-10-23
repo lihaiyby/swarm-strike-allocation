@@ -29,8 +29,10 @@
 | 远端 | `https://github.com/lihaiyby/swarm-strike-allocation.git` |
 | 分支 | `main` |
 | 本地 HEAD | 见 `git log --oneline -1` |
-| 最近一次成功推送 | **尚无**（远端仍停在 `386efe5`） |
-| 网络连通性 | 2026-10-23 17:46–17:55 实测：`git ls-remote` 连接超时（21 s）×1；`git push` **Connection was reset** ×1、**443 连接超时** ×1。<br>2026-10-23 20:45 复测：`ls-remote` **Failed to connect to github.com port 443 after 21092 ms**；`push`（含 `http.version=HTTP/1.1` + `postBuffer=512MB` 重试）**Connection was reset**。GitHub 443 端口当前不可达 |
+| 最近一次成功推送 | **2026-10-23 21:02 ✅** 远端 `1bd0af7`（本地 5 个提交已全部推送） |
+| 网络连通性 | **根因已查明（2026-10-23 21:00）**：本机开着系统代理 `127.0.0.1:7897`（Clash/Mihomo 一类），**Edge 走系统代理所以能上 GitHub；git 不读 Windows 的 Internet 设置**，`HTTP_PROXY`/`HTTPS_PROXY`/`git http.proxy` 三处皆空，于是 git 一直**直连**。直连时 TCP 握手能成（`Test-NetConnection github.com:443` → True，`20.205.243.166`），但 TLS 阶段被重置 → `Connection was reset`。<br>**经代理后完全正常**：`ls-remote` 秒回，`push` 成功。 |
+
+> **结论：不是网络不通，是 git 没走代理。** 以前记录的"GitHub 443 不可达"是误判，已更正。
 
 ### 待推送队列
 
@@ -38,15 +40,14 @@
 
 | 项 | 内容 |
 |---|---|
-| 待推送范围 | **本地领先 `origin/main` 的全部提交** |
+| 待推送范围 | **无（队列已清空）** |
 | 查看命令 | `git log --oneline origin/main..HEAD` |
-| 当前远端位置 | `386efe5`（初始提交，未含任何 `docs/`） |
-| 阻塞原因 | `Connection was reset` / `Failed to connect to github.com port 443`（两次重试均失败） |
-| 补推命令 | `git -c http.sslBackend=openssl push origin main` |
+| 当前远端位置 | `1bd0af7`（与本地 HEAD 一致） |
+| 阻塞原因 | ~~网络不可达~~ → 实为「未配置代理」+「沙箱禁止命名管道导致凭据助手失效」，见下 |
+| 补推命令 | `git -c http.proxy=http://127.0.0.1:7897 -c https.proxy=http://127.0.0.1:7897 -c http.sslBackend=openssl push origin main`（**须以完全权限执行**） |
 | 补推后要做 | ① 把本表改为 ✅ 并写明推送时间；② 更新上方"最近一次成功推送" |
 
-> 本机 `schannel` 后端存在 `SEC_E_NO_CREDENTIALS` 问题，推送须显式指定 openssl 后端。
-> **下一个会话有义务先补推，再开始自己的任务**（见 `AGENTS.md` §4.3）。
+> **推送三件套（缺一不可）**：① 显式代理 `127.0.0.1:7897`；② 显式 TLS 后端 `openssl`；③ **完全权限**执行——沙箱禁止创建命名管道，git 的凭据助手（从 Windows 凭据管理器取令牌）在受限模式下会报 `couldn't create signal pipe, Win32 error 5`，进而退化成 `could not read Username`。
 
 ---
 
@@ -78,10 +79,11 @@
 - 现有单测只对 greedy 做可复现校验，`ga_iap` 从未被"连跑两次比对"覆盖——这是漏网的直接原因。
 
 **提交**：`a7a1af0`（四份文档）；本条补充与 `AGENTS.md §6.1` 见后续 commit
-**推送**：⏳ 未推送（`github.com:443` 不可达，`Failed to connect ... after 21076 ms` / `Connection was reset`）
+**推送**：✅ 2026-10-23 21:02，远端 `1bd0af7`
 
 **附：本机环境障碍（已写入 `AGENTS.md §6.1`）**
 - `git commit` 报 `Unable to create .git/index.lock: Permission denied`：DSH 沙箱受限令牌写不进 `.git`；已用 ACL 诊断脚本为 `.git` 与仓库根补当前用户完全控制并**验证通过**，但沙箱内仍被拒 → **提交须以完全权限执行**。
+- `git push` 反复失败的真因**不是网络不通**，而是**没走本机代理**：系统代理 `127.0.0.1:7897` 开着（Edge 用它），但 git 不读 Windows Internet 设置，`HTTP_PROXY`/`HTTPS_PROXY`/`git http.proxy` 全空 → 直连时 TCP 能连上、TLS 被重置。经代理后立即成功。
 - ACL 修复的备份与回滚脚本位于 `D:\deepseek-workspace\_acl-recovery\`。
 
 ---
