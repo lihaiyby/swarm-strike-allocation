@@ -28,18 +28,24 @@
 |---|---|
 | 远端 | `https://github.com/lihaiyby/swarm-strike-allocation.git` |
 | 分支 | `main` |
-| 本地 HEAD | `3c5ff11`（docs 提交）→ 追加本条记录后的 HEAD 见 `git log -1` |
-| 最近一次成功推送 | **尚无**（仓库仍停在 `386efe5`） |
-| 网络连通性 | 2026-10-23 17:46 实测：`git ls-remote` **连接超时**（21 s）；`git push` **Connection was reset**（exit 128）。GitHub 443 端口当前不可达 |
+| 本地 HEAD | 见 `git log --oneline -1` |
+| 最近一次成功推送 | **尚无**（远端仍停在 `386efe5`） |
+| 网络连通性 | 2026-10-23 17:46–17:55 实测：`git ls-remote` 连接超时（21 s）×1；`git push` **Connection was reset** ×1、**443 连接超时** ×1。GitHub 443 端口当前不可达 |
 
 ### 待推送队列
 
-| 顺序 | commit | message | 状态 |
-|---|---|---|---|
-| 1 | `3c5ff11` | `docs: 建立擂台改造四件套与 AI 协作规约` | ⏳ 待推送（`Connection was reset`） |
+> 用**自维护表述**，不再逐条硬编码提交号（否则每提交一次就会过期）。
 
-> 网络恢复后执行：`git -c http.sslBackend=openssl push origin main`
-> （本机 schannel 后端存在 `SEC_E_NO_CREDENTIALS` 问题，需显式指定 openssl 后端。）
+| 项 | 内容 |
+|---|---|
+| 待推送范围 | **本地领先 `origin/main` 的全部提交** |
+| 查看命令 | `git log --oneline origin/main..HEAD` |
+| 当前远端位置 | `386efe5`（初始提交，未含任何 `docs/`） |
+| 阻塞原因 | `Connection was reset` / `Failed to connect to github.com port 443`（两次重试均失败） |
+| 补推命令 | `git -c http.sslBackend=openssl push origin main` |
+| 补推后要做 | ① 把本表改为 ✅ 并写明推送时间；② 更新上方"最近一次成功推送" |
+
+> 本机 `schannel` 后端存在 `SEC_E_NO_CREDENTIALS` 问题，推送须显式指定 openssl 后端。
 > **下一个会话有义务先补推，再开始自己的任务**（见 `AGENTS.md` §4.3）。
 
 ---
