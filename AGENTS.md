@@ -140,6 +140,15 @@ git status --short
 git log --oneline -3
 ```
 
+### 6.1 本机已知环境障碍（2026-10-23 实测）
+
+| 症状 | 原因 | 处理 |
+|---|---|---|
+| `git commit` 报 `Unable to create .git/index.lock: Permission denied` | DSH 沙箱的受限令牌写不进 `.git`（ACL 已补当前用户完全控制并验证，仍被拒） | **以完全权限（danger-full-access）执行 `git add/commit`** |
+| `git clone/push` 报 `SEC_E_NO_CREDENTIALS` | 本机 `schannel` TLS 后端不可用 | 一律加 `-c http.sslBackend=openssl` |
+| `git push` 报 `Failed to connect to github.com port 443` / `Connection was reset` | 网络层不可达（非本地配置问题，重试无效） | 登记到 `docs/AI工作日志.md` 待推送队列，**下个会话先补推** |
+| `pytest` 报 `could not create cache path ... Permission denied` | 残留 `pytest-cache-files-*` 目录 | 已清理；如再出现，删除该目录即可 |
+
 ---
 
 ## 7. 当前优先级（2026-10-23）

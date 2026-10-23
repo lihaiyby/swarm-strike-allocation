@@ -77,8 +77,12 @@
 - `ga_iap` 的输出是**墙钟时间的函数**：预算越小代数越少、解越差；现值 0.8 s 对 200 代的余量仅 0.16 s，负载一变即截断。指标 e 因此是**被截断的量**，不能代表算法效率。
 - 现有单测只对 greedy 做可复现校验，`ga_iap` 从未被"连跑两次比对"覆盖——这是漏网的直接原因。
 
-**提交**：见本条之后的 commit
-**推送**：⏳ 未推送（`github.com:443` 不可达，`Failed to connect ... after 21092 ms` / `Connection was reset`）
+**提交**：`a7a1af0`（四份文档）；本条补充与 `AGENTS.md §6.1` 见后续 commit
+**推送**：⏳ 未推送（`github.com:443` 不可达，`Failed to connect ... after 21076 ms` / `Connection was reset`）
+
+**附：本机环境障碍（已写入 `AGENTS.md §6.1`）**
+- `git commit` 报 `Unable to create .git/index.lock: Permission denied`：DSH 沙箱受限令牌写不进 `.git`；已用 ACL 诊断脚本为 `.git` 与仓库根补当前用户完全控制并**验证通过**，但沙箱内仍被拒 → **提交须以完全权限执行**。
+- ACL 修复的备份与回滚脚本位于 `D:\deepseek-workspace\_acl-recovery\`。
 
 ---
 
