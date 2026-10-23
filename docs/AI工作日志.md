@@ -1,7 +1,7 @@
 # AI 工作日志 · 及 GitHub 同步记录
 
 > 用途：**每一次 AI 会话/改动**都必须在这里留一条记录，并同步登记是否已推送到 GitHub。
-> 配套规约：[AGENTS.md](../../AGENTS.md)（四件套维护要求）。
+> 配套规约：[AGENTS.md](../AGENTS.md)（四件套维护要求）。
 > 记录规则：**只追加，最新在上**；倒序排列，便于一眼看到最近发生了什么。
 
 ---
@@ -28,24 +28,25 @@
 |---|---|
 | 远端 | `https://github.com/lihaiyby/swarm-strike-allocation.git` |
 | 分支 | `main` |
-| 本地 HEAD | 见下方"待推送队列" |
-| 最近一次成功推送 | **尚无**（本地提交均为本次会话产生） |
-| 网络连通性 | 2026-10-23 21:xx 实测 `github.com:443` **连接超时**，需重试 |
+| 本地 HEAD | `3c5ff11`（docs 提交）→ 追加本条记录后的 HEAD 见 `git log -1` |
+| 最近一次成功推送 | **尚无**（仓库仍停在 `386efe5`） |
+| 网络连通性 | 2026-10-23 17:46 实测：`git ls-remote` **连接超时**（21 s）；`git push` **Connection was reset**（exit 128）。GitHub 443 端口当前不可达 |
 
 ### 待推送队列
 
 | 顺序 | commit | message | 状态 |
 |---|---|---|---|
-| 1 | `<本次提交>` | `docs: 建立擂台改造四件套与 AI 协作规约` | ⏳ 待推送（网络不可达） |
+| 1 | `3c5ff11` | `docs: 建立擂台改造四件套与 AI 协作规约` | ⏳ 待推送（`Connection was reset`） |
 
 > 网络恢复后执行：`git -c http.sslBackend=openssl push origin main`
 > （本机 schannel 后端存在 `SEC_E_NO_CREDENTIALS` 问题，需显式指定 openssl 后端。）
+> **下一个会话有义务先补推，再开始自己的任务**（见 `AGENTS.md` §4.3）。
 
 ---
 
 ## 日志
 
-### 2026-10-23 21:xx · 建立"四件套"协作体系
+### 2026-10-23 17:46 · 建立"四件套"协作体系
 
 **任务**：任务清单外，新增变量大全、AI 工作日志，并确立四文件联动维护的规约（对应清单 Track M）。
 
@@ -69,8 +70,8 @@
 - `Model.check` 只在 `exp0_smoke` 与单测中出现，**仿真主循环确实不校验 X** —— 与 2026-10-20 的推断一致，现在是代码事实；
 - `per_scene_metrics` 只被 `exp0_smoke` 使用，exp1 的指标全部来自 `BattleResult` → 印证"b 有两套实现"（待办 P0.6）。
 
-**提交**：`<本次提交>`
-**推送**：⏳ 未推送（github.com:443 连接超时）
+**提交**：`3c5ff11` — `docs: 建立擂台改造四件套与 AI 协作规约`
+**推送**：⏳ **失败**（`fatal: Recv failure: Connection was reset`，exit 128）。已登记入待推送队列，下一个会话须先补推。
 
 ---
 
