@@ -10,6 +10,12 @@
 3. 保留原文三改进中的两个：DDA-NS 优势度矩阵排序（算法1）、截断均值自适应
    Pc/Pm（式13-17）；粗粒度并行迁移略去（本规模串行已远满足 1s 指标）。
 4. 静态模型嵌入滚动时域：每个触发点重跑一次（由仿真主循环驱动）。
+5. 【P0.3 可复现性修复】停止条件只用**固定代数** `GEN_MAX`，不用墙钟。
+   原实现以 `TIME_BUDGET=0.8 s` 为停止条件之一，实测该预算取 0.05/0.15/0.40/0.80 s
+   时分别只跑 11/54/128/200 代、出动架数 50/43/53/55（±13%），而跑满 200 代仅需 0.64 s，
+   余量只有 0.16 s —— 机器一慢就提前截断，同一实验三次分别得到 b=0.397/0.4046/0.405。
+   现在 `TIME_BUDGET_S=None`（默认）为确定性模式；显式设为秒数才退化为"限时解"，
+   该模式**结果不可复现**，仅作为消融实验的显式因子（对应任务清单 P0.3 的验收 ④）。
 
 参数取原文：Pc∈[0.6,0.9]，Pm∈[0.01,0.1]，B=K=0.3，截断比例 α=0.5。
 """
@@ -125,8 +131,9 @@ class _NSGA3:
 class GaIap(AlgoBase):
     name = "ga_iap"
 
-    GEN_MAX = 200
-    TIME_BUDGET = 0.8          # 秒，留 1s 上限余量
+    GEN_MAX = 200              # 固定代数：唯一的停止条件（确定性）
+    TIME_BUDGET_S = None       # None = 确定性模式（默认）；
+                               # 设为秒数 = "限时解"模式，结果不可复现，仅供消融实验
     POP = 100
     PC_RANGE = (0.6, 0.9)
     PM_RANGE = (0.01, 0.1)
@@ -173,10 +180,15 @@ class GaIap(AlgoBase):
         pop[rng.random((self.POP, n)) < 0.4] = 0                       # 稀疏化
         pop = np.minimum(pop, cap)
 
-        t0 = time.perf_counter()
+        # 诊断字段：本轮是否被墙钟截断、实际跑了多少代（确定性模式恒为 False / GEN_MAX）
+        self.truncated = False
+        self.gens_run = 0
+        t0 = time.perf_counter() if self.TIME_BUDGET_S is not None else None
         for gen in range(self.GEN_MAX):
-            if time.perf_counter() - t0 > self.TIME_BUDGET:
+            if t0 is not None and time.perf_counter() - t0 > self.TIME_BUDGET_S:
+                self.truncated = True
                 break
+            self.gens_run = gen + 1
             F, _, _ = evaluate(pop)
             fit = F.sum(axis=1)
             fmean = _truncated_mean(fit, gen / self.GEN_MAX, len(_ddns(F)[0]))
