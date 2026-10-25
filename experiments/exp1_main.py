@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import swarm_alloc.algorithms  # noqa: F401 自动注册全部算法
 from swarm_alloc.algorithms.base import available, get
 from swarm_alloc.config import ROOT, load
+from swarm_alloc.evaluation.oracle import scene_upper_bound
 from swarm_alloc.model import Model
 from swarm_alloc.simulation.simulate import simulate
 
@@ -31,15 +32,23 @@ def run_all(algo_names: list, n_scenes: int) -> pd.DataFrame:
     with open(ROOT / "data" / "scenes.pkl", "rb") as f:
         scenes = pickle.load(f)[:n_scenes]
 
+    # 上界只与场景有关，先算一次（P1.4：~10 ms/场景）
+    oracle = {s.seed: scene_upper_bound(s, model) for s in scenes}
+
     rows, details = [], {}
     for name in algo_names:
         for s in scenes:
             algo = get(name)
             r = simulate(s, algo, model, scfg, etcfg)
+            ob = oracle[s.seed]
             rows.append(dict(algo=name, seed=s.seed, R=s.R, a_gain=r.a_gain,
                              b_threat=r.b_threat, d_cost=r.d_cost, time_s=r.time_s,
                              n_enemy=r.n_enemy, destroyed=r.n_destroyed,
-                             leaked=r.n_leaked, lost=r.n_lost, used=r.n_used))
+                             leaked=r.n_leaked, lost=r.n_lost, used=r.n_used,
+                             a_opt=ob.a_opt, b_opt=ob.b_opt, d_opt=ob.d_opt,
+                             used_opt=ob.used,
+                             gap_a=(ob.a_opt - r.a_gain) / ob.a_opt,
+                             gap_b=ob.b_opt - r.b_threat))
             details[(name, s.seed)] = r
     return pd.DataFrame(rows), details
 
@@ -123,7 +132,8 @@ def main():
     df.to_csv(out_dir / "exp1_metrics.csv", index=False)
 
     summary = df.groupby("algo")[["a_gain", "b_threat", "d_cost", "time_s",
-                                  "destroyed", "leaked", "lost", "used"]].agg(["mean", "std"])
+                                  "destroyed", "leaked", "lost", "used",
+                                  "gap_a", "gap_b"]].agg(["mean", "std"])
     summary.to_csv(out_dir / "exp1_summary.csv")
     print(summary.to_string(float_format=lambda x: f"{x:.3f}"))
 

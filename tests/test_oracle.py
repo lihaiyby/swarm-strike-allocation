@@ -99,3 +99,44 @@ def test_budget_is_fleet_size():
     ob = scene_upper_bound(s, model)
     assert ob.budget == len(s.friendly)
     assert ob.used <= ob.budget
+
+
+# ---------------------------------------------------------------- 近视最优参照策略
+
+def _state_at_wave0(s):
+    from swarm_alloc.perception.dbscan_inc import GroupTracker
+    from swarm_alloc.perception.topsis import topsis
+    from swarm_alloc.simulation.state import State
+
+    st = State(t=0.0, enemies={u.id: u for u in s.waves[0].units}, groups=[],
+               pool={fu.id: fu for fu in s.friendly})
+    tr = GroupTracker(scfg["perception"]["eps_m"], scfg["perception"]["min_samples"])
+    ids = st.enemy_ids
+    tr.update(ids, np.vstack([st.enemies[i].pos for i in ids]))
+    st.groups = topsis(list(tr.groups.values()), st.enemies)
+    return st
+
+
+def test_myopic_opt_respects_c1_and_c2():
+    """近视最优：单架单目标（C1）+ 打则必达配额（C2）。"""
+    from swarm_alloc.algorithms.myopic_opt import MyopicOpt
+
+    st = _state_at_wave0(SCENES[0])
+    X = MyopicOpt().solve(st, model)
+    assert (X.sum(axis=1) <= 1).all(), "违反 C1"
+    quotas = np.array([model.quota(p) for p in st.enemy_matrix()[1]])
+    col = X.sum(axis=0)
+    for c, q in zip(col, quotas):
+        assert c == 0 or c >= q, "违反 C2"
+    assert X.sum() <= len(st.pool_ids)
+
+
+def test_myopic_opt_is_myopic():
+    """它会用尽当前兵力（缺乏预见）——这正是"近视"的定义。"""
+    from swarm_alloc.algorithms.myopic_opt import MyopicOpt
+
+    st = _state_at_wave0(SCENES[0])
+    X = MyopicOpt().solve(st, model)
+    used = int(X.sum())
+    # 波次目标总量远小于编制，若不近视不应把编制打光
+    assert used == len(st.pool_ids)
