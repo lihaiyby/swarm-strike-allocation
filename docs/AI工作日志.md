@@ -1,4 +1,4 @@
-# AI 工作日志 · 及 GitHub 同步记录
+﻿# AI 工作日志 · 及 GitHub 同步记录
 
 > 用途：**每一次 AI 会话/改动**都必须在这里留一条记录，并同步登记是否已推送到 GitHub。
 > 配套规约：[AGENTS.md](../AGENTS.md)（四件套维护要求）。
@@ -29,7 +29,7 @@
 | 远端 | `https://github.com/lihaiyby/swarm-strike-allocation.git` |
 | 分支 | `main` |
 | 本地 HEAD | 见 `git log --oneline -1` |
-| 最近一次成功推送 | **2026-10-25 12:0x ✅** 远端 `a2257d3`（P0.1 + P0.6：指标 b 改真值团 + 价值加权） |
+| 最近一次成功推送 | **2026-10-25 12:3x ✅** 远端 `4ca7ee9`（P3.6：三套总分接口） |
 | 网络连通性 | **根因已查明（2026-10-23 21:00）**：本机开着系统代理 `127.0.0.1:7897`（Clash/Mihomo 一类），**Edge 走系统代理所以能上 GitHub；git 不读 Windows 的 Internet 设置**，`HTTP_PROXY`/`HTTPS_PROXY`/`git http.proxy` 三处皆空，于是 git 一直**直连**。直连时 TCP 握手能成（`Test-NetConnection github.com:443` → True，`20.205.243.166`），但 TLS 阶段被重置 → `Connection was reset`。<br>**经代理后完全正常**：`ls-remote` 秒回，`push` 成功。 |
 
 > **结论：不是网络不通，是 git 没走代理。** 以前记录的"GitHub 443 不可达"是误判，已更正。
@@ -85,8 +85,8 @@
 - 稳定性（c）并入后差距从 3.5% 扩大到 10.0%，因 ga_iap 的 b 逐场景波动是 greedy 的 21 倍。
 - 结论：**D3 仍是阻塞项，但性质变了**——现在不是"算不出"，而是"选哪套"。
 
-**提交**：`<本轮 commit>`
-**推送**：✅ 见更新后的同步状态
+**提交**：`4ca7ee9`
+**推送**：✅ 2026-10-25 12:3x 已推送（`7638b2c..4ca7ee9 main -> main`）
 
 ---
 
