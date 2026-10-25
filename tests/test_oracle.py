@@ -140,3 +140,21 @@ def test_myopic_opt_is_myopic():
     used = int(X.sum())
     # 波次目标总量远小于编制，若不近视不应把编制打光
     assert used == len(st.pool_ids)
+
+
+# ---------------------------------------------------------------- 随机可行解（下界）
+
+def test_random_feasible_is_feasible_and_reproducible():
+    """下界基线：满足 C1/C2，且同一态势两次求解结果一致。"""
+    from swarm_alloc.algorithms.random_feasible import RandomFeasible
+
+    st = _state_at_wave0(SCENES[0])
+    a = RandomFeasible()
+    X1 = a.solve(st, model)
+    X2 = RandomFeasible().solve(st, model)
+    assert np.array_equal(X1, X2), "同态势应可复现"
+    assert (X1.sum(axis=1) <= 1).all(), "违反 C1"
+    quotas = np.array([model.quota(p) for p in st.enemy_matrix()[1]])
+    for c, q in zip(X1.sum(axis=0), quotas):
+        assert c == 0 or c >= q, "违反 C2"
+    assert X1.sum() <= len(st.pool_ids)
