@@ -29,7 +29,7 @@
 | 远端 | `https://github.com/lihaiyby/swarm-strike-allocation.git` |
 | 分支 | `main` |
 | 本地 HEAD | 见 `git log --oneline -1` |
-| 最近一次成功推送 | **2026-10-25 11:52 ✅** 远端 `425253c`（P0.3：ga_iap 去墙钟截断） |
+| 最近一次成功推送 | **2026-10-25 12:0x ✅** 远端 `a2257d3`（P0.1 + P0.6：指标 b 改真值团 + 价值加权） |
 | 网络连通性 | **根因已查明（2026-10-23 21:00）**：本机开着系统代理 `127.0.0.1:7897`（Clash/Mihomo 一类），**Edge 走系统代理所以能上 GitHub；git 不读 Windows 的 Internet 设置**，`HTTP_PROXY`/`HTTPS_PROXY`/`git http.proxy` 三处皆空，于是 git 一直**直连**。直连时 TCP 握手能成（`Test-NetConnection github.com:443` → True，`20.205.243.166`），但 TLS 阶段被重置 → `Connection was reset`。<br>**经代理后完全正常**：`ls-remote` 秒回，`push` 成功。 |
 
 > **结论：不是网络不通，是 git 没走代理。** 以前记录的"GitHub 443 不可达"是误判，已更正。
@@ -79,8 +79,8 @@
 - **复现01 §7 的结论需要重写**：ga_iap 并非"系统性放弃侦察机"，其中位 b 为 0.938、四分之一以上场景为 1.0，问题集中在 12/50 的尾部场景。已登记 R3。
 - 三指标形成健康权衡：greedy 赢 a（−0.65）、b（−0.75），ga_iap 赢 d（+0.71，33/50 场景）。
 
-**提交**：`<本轮 commit>`
-**推送**：✅ 见下（代理 + openssl）
+**提交**：`a2257d3`
+**推送**：✅ 2026-10-25 12:0x 已推送（代理 + openssl，`685a993..a2257d3 main -> main`）
 
 ---
 
