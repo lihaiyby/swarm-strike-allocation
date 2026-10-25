@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from ..evaluation.b_metric import group_elimination_rate
 from ..perception.dbscan_inc import GroupTracker
 from ..perception.topsis import topsis
 from .state import State
@@ -29,7 +30,9 @@ class BattleResult:
     seed: int
     algo: str
     a_gain: float = 0.0
-    b_threat: float = 0.0
+    b_threat: float = 0.0          # 威胁消除率（真值团 + 价值加权，见 evaluation/b_metric.py）
+    b_num: float = 0.0             # b 的分子：被全歼的真值团价值之和
+    b_den: float = 0.0             # b 的分母：场景总价值（常数，与算法无关）
     d_cost: float = 0.0
     time_s: float = 0.0
     n_enemy: int = 0
@@ -62,8 +65,6 @@ def simulate(scene, algo, model, scfg, etcfg, realloc_on_loss: bool = True) -> B
     v_of = {}                                     # enemy_id -> value
 
     res = BattleResult(seed=scene.seed, algo=algo.name, n_enemy=scene.n_enemy)
-    threat_total, threat_dead = 0.0, 0.0
-    seen_groups, dead_groups = set(), set()
     prev_t = 0.0
 
     triggers = [f * scene.T for f in scfg["waves"]["times_frac"]] + [scene.T]
@@ -98,12 +99,6 @@ def simulate(scene, algo, model, scfg, etcfg, realloc_on_loss: bool = True) -> B
             tracker.update(eids, epos)
             groups = topsis(list(tracker.groups.values()), active)
 
-            # 威胁度账：新出现的群计入总额
-            for g in groups:
-                if g.id not in seen_groups:
-                    seen_groups.add(g.id)
-                    threat_total += g.threat
-
             state = State(t=t, enemies=dict(active), groups=groups,
                           pool=dict(pool), frozen_ids=[])
             t0 = time.perf_counter()
@@ -127,12 +122,6 @@ def simulate(scene, algo, model, scfg, etcfg, realloc_on_loss: bool = True) -> B
                     res.a_gain += v_of[eid] * P[eid]
                     res.n_destroyed += 1
                     del active[eid]
-            for g in groups:
-                if g.id not in dead_groups and g.member_ids and \
-                        all(P[m] >= model.kill_threshold for m in g.member_ids if m in P) and \
-                        all(m in P for m in g.member_ids):
-                    dead_groups.add(g.id)
-                    threat_dead += g.threat
 
             # 战损抽样 + 触发追加分配
             lost = battle_damage(rng, list(engaged.values()), pool, lethality)
@@ -160,6 +149,11 @@ def simulate(scene, algo, model, scfg, etcfg, realloc_on_loss: bool = True) -> B
     for eid, e in active.items():
         res.a_gain += v_of[eid] * P[eid]
 
-    res.b_threat = threat_dead / threat_total if threat_total > 0 else 0.0
+    # b：真值团 + 价值加权，**全程只算一次**（不分回合，不依赖感知层）。
+    # 分母 = 场景总价值，对任何算法都是同一个常数。
+    all_values = {u.id: u.value for w in scene.waves for u in w.units}
+    b, num, den = group_elimination_rate(
+        P, scene.ground_truth_groups(), all_values, model.kill_threshold)
+    res.b_threat, res.b_num, res.b_den = b, num, den
     res.d_cost = res.a_gain / max(res.n_used, 1)
     return res

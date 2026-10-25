@@ -43,3 +43,27 @@ class Scene:
     @property
     def n_enemy(self) -> int:
         return sum(len(w.units) for w in self.waves)
+
+    def ground_truth_groups(self) -> list:
+        """真值团：按生成时的 (波次, cluster) 划分，噪点各自独立成团。
+
+        与感知层的动态 DBSCAN 分组无关——这是**战场客观事实**，
+        用作评估指标 b 的群定义（见 docs/擂台改造-任务清单.md D2 = ②）。
+
+        返回 list[list[enemy_id]]：
+        - 覆盖本场景**全部**敌机，且每个敌机恰好出现一次（划分，不是覆盖）；
+        - 顺序确定（波次升序 → 团编号升序 → 噪点按 id 升序），保证可复现。
+        """
+        groups = []
+        for wave in self.waves:
+            by_cluster = {}
+            noise = []
+            for u in wave.units:
+                if u.cluster >= 0:
+                    by_cluster.setdefault(u.cluster, []).append(u.id)
+                else:
+                    noise.append([u.id])
+            for c in sorted(by_cluster):
+                groups.append(sorted(by_cluster[c]))
+            groups.extend(sorted(noise))
+        return groups

@@ -53,6 +53,37 @@
 
 ## 日志
 
+### 2026-10-25 12:05 · P0.1 + P0.6：指标 b 改为真值团 + 价值加权
+
+**任务**：P0.1（b 的分母改为固定真值团）+ P0.6（合并两份 b 实现），对应决策 D2 = ②。
+
+**改动**
+| 文件 | 类型 | 说明 |
+|---|---|---|
+| `src/swarm_alloc/scenario/scene.py` | 修改 | 新增 `Scene.ground_truth_groups()`：真值团划分，噪点各自成团，不重不漏、顺序确定 |
+| `src/swarm_alloc/evaluation/b_metric.py` | 新增 | 指标 b 的**唯一实现** `group_elimination_rate()`；返回 `(b, num, den)` |
+| `src/swarm_alloc/simulation/simulate.py` | 修改 | 删 `threat_total`/`threat_dead`/`seen_groups`/`dead_groups`；战局结束**一次性**算 b；`BattleResult` 增 `b_num`/`b_den` |
+| `src/swarm_alloc/evaluation/metrics.py` | 修改 | 调同一函数；新增可选 `groups=` 参数（缺省保留单轮诊断口径） |
+| `tests/test_b_metric.py` | 新增 | 13 项：一票否决、缺失按 0、价值加权、阈值 ≥ 语义、划分完整性、噪点独立成团、可复现、跨算法分母相等 |
+| `results/exp1/*` | 重新生成 | 50 场景 × {greedy, ga_iap}，按新口径重跑 |
+
+**验证**
+- `pytest tests/ -q` → **28 passed**（原 15 + 新 13）
+- a / d / destroyed / used **逐位不变**（589.7091 / 584.7590 / 1.6571 / 1.7136 …）→ 纯测量修复，未扰动动力学
+- b：greedy `0.9958±0.0220 → 0.9983±0.0071`；ga_iap `0.4046±0.1281 → 0.8887±0.1487`
+- 配对 Cohen's d（b）：`−7.32 → −0.75`（从退化变为健康）
+- ga_iap 的 b 分位：`0.300 / 0.728 / 0.810 / 0.938 / 1.000 / 1.000`；仅 12/50 场景 < 0.8
+
+**结论**
+- 旧口径下 b 的分母随算法行为漂移（同场景 greedy 21 个群 ID、ga_iap 53 个，真实团数 21），**不可跨算法比较**；新口径分母恒为场景总价值。
+- **复现01 §7 的结论需要重写**：ga_iap 并非"系统性放弃侦察机"，其中位 b 为 0.938、四分之一以上场景为 1.0，问题集中在 12/50 的尾部场景。已登记 R3。
+- 三指标形成健康权衡：greedy 赢 a（−0.65）、b（−0.75），ga_iap 赢 d（+0.71，33/50 场景）。
+
+**提交**：`<本轮 commit>`
+**推送**：✅ 见下（代理 + openssl）
+
+---
+
 ### 2026-10-25 11:45 · P0.3 完成：ga_iap 去墙钟截断，结果与机器负载解耦
 
 **任务**：P0.3 —— `ga_iap` 的 `TIME_BUDGET` 不再作为停止条件，改为固定代数；耗时单独测入指标 e。
