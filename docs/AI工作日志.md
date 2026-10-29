@@ -1,4 +1,4 @@
-# AI 工作日志 · 及 GitHub 同步记录
+﻿# AI 工作日志 · 及 GitHub 同步记录
 
 > 用途：**每一次 AI 会话/改动**都必须在这里留一条记录，并同步登记是否已推送到 GitHub。
 > 配套规约：[AGENTS.md](../AGENTS.md)（四件套维护要求）。
@@ -29,7 +29,7 @@
 | 远端 | `https://github.com/lihaiyby/swarm-strike-allocation.git` |
 | 分支 | `main` |
 | 本地 HEAD | 见 `git log --oneline -1` |
-| 最近一次成功推送 | **2026-10-29 19:0x ✅** 远端 `a30f715`（P2.1–P2.4：编制三档落地）。其后仅剩"登记提交号"的 docs 提交待补推 |
+| 最近一次成功推送 | **2026-10-29 19:5x ✅** 远端 `d92a9a3`（P3.1–P3.4：三因子主实验） |
 | 网络连通性 | **根因已查明（2026-10-23 21:00）**：本机开着系统代理 `127.0.0.1:7897`（Clash/Mihomo 一类），**Edge 走系统代理所以能上 GitHub；git 不读 Windows 的 Internet 设置**，`HTTP_PROXY`/`HTTPS_PROXY`/`git http.proxy` 三处皆空，于是 git 一直**直连**。直连时 TCP 握手能成（`Test-NetConnection github.com:443` → True，`20.205.243.166`），但 TLS 阶段被重置 → `Connection was reset`。<br>**经代理后完全正常**：`ls-remote` 秒回，`push` 成功。 |
 
 > **结论：不是网络不通，是 git 没走代理。** 以前记录的"GitHub 443 不可达"是误判，已更正。
@@ -75,8 +75,8 @@
 - **排名不稳定**：4 个算法里 3 个名次变化，冠军序列 `greedy → greedy → ga_iap` 翻转。→ "哪个算法更好"必须带档位回答。
 - 期间遇到 Windows 安全中心多实例卡死导致导入耗时 38 s，重启后恢复（见下条环境备注）。
 
-**提交**：`<本轮 commit>`
-**推送**：✅ 见同步状态
+**提交**：`d92a9a3`
+**推送**：✅ 2026-10-29 19:5x 已推送（`3ed9f8b..d92a9a3`）
 
 ---
 
