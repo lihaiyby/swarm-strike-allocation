@@ -1,4 +1,4 @@
-﻿# AI 工作日志 · 及 GitHub 同步记录
+# AI 工作日志 · 及 GitHub 同步记录
 
 > 用途：**每一次 AI 会话/改动**都必须在这里留一条记录，并同步登记是否已推送到 GitHub。
 > 配套规约：[AGENTS.md](../AGENTS.md)（四件套维护要求）。
@@ -52,6 +52,32 @@
 ---
 
 ## 日志
+
+### 2026-10-29 17:45 · P3.7：三套打分在 k=4 下的失效模式与加固
+
+**任务**：P3.7 —— 回答"k=2 时做的三套总分能否推广到更多算法"，用仓库现有 4 个算法做压力测试并修掉暴露的问题。
+
+**改动**
+| 文件 | 类型 | 说明 |
+|---|---|---|
+| `src/swarm_alloc/evaluation/score.py` | 修改 | 新增 `AGG_MODES`（4 种汇聚）、`_aggregate`、`_holm`、`_star`、`_sig_vs_baseline`、`nemenyi_cd(k,N)`；`score_relative` 增 `agg=`/`significance=`；`score_pareto` 增 `pareto_by_plane`（3 组平面）；报告增显著性列、CD 与门槛告警、聚合敏感性表 |
+| `tests/test_score.py` | 修改 | 新增 10 项测试 |
+| `docs/擂台改造-任务清单.md` / `进度记录.md` / `变量及参数及符号大全.md` | 修改 | P3.7 关闭 + 结论 + 新符号 |
+
+**验证**
+- `pytest tests/ -q` → **63 passed**
+- `python -m swarm_alloc.evaluation.score` 正常，k=4 全流程跑通
+
+**结论**
+- **k=4 暴露出 k=2 完全看不到的三个问题**：① A 的 0.26% 差距在统计上完全不可区分（四项 `sig` 全 n.s.）；② 同一对比较在 Nemenyi（不显著）与 Holm 校正 Wilcoxon（***）下结论相反；③ 帕累托前沿随所选维度改变（`b×e` 平面上 `random_feasible` 进入前沿）。
+- **`random_feasible` 在 `ratio`/`rank` 两种时间模式下反超 greedy**——"3n 下问题太简单"再获独立佐证。
+- **Nemenyi CD 随 k 快速衰减**：k=2→0.277、k=4→0.663、k=10→1.916。算法增到 8~10 时必须同步增加场景数。
+- 建议主表口径：`agg=geomean` + `time_mode=threshold` + **Holm 校正 Wilcoxon** 判显著性，附录附 Nemenyi CD 图作对照。
+
+**提交**：`<本轮 commit>`
+**推送**：✅ 见同步状态
+
+---
 
 ### 2026-10-25 13:55 · P1.3：下界基线落地，随即发现"随机与 greedy 打平"
 

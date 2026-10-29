@@ -108,3 +108,59 @@ def test_runs_on_real_exp1_csv():
     assert len(a) == df.algo.nunique() == len(c)
     assert abs(a.loc["greedy", "score"] - 1.0) < 1e-9
     assert set(b["pareto"]) <= set(df.algo.unique())
+
+
+# ---------------------------------------------------------------- P3.7 可扩展性
+
+@pytest.mark.parametrize("agg", ["mean", "median", "geomean", "ratio_of_means"])
+def test_all_agg_modes_run(agg):
+    out = score_relative(_toy(), agg=agg)
+    assert abs(out.loc["greedy", "score"] - 1.0) < 1e-9
+    assert len(out) == 3
+
+
+def test_unknown_agg_rejected():
+    with pytest.raises(ValueError):
+        score_relative(_toy(), agg="nope")
+
+
+def test_geomean_not_above_arithmetic():
+    """几何平均 ≤ 算术平均（Jensen），比值型数据用它更稳。"""
+    a = score_relative(_toy(), agg="mean")
+    g = score_relative(_toy(), agg="geomean")
+    for algo in a.index:
+        assert g.loc[algo, "r_a"] <= a.loc[algo, "r_a"] + 1e-12
+
+
+def test_holm_monotone_and_bounded():
+    from swarm_alloc.evaluation.score import _holm
+    raw = [0.001, 0.02, 0.04, 0.5]
+    adj = _holm(raw)
+    assert all(0 <= x <= 1 for x in adj)
+    # 校正后不应小于原值
+    assert all(a >= r - 1e-12 for a, r in zip(adj, raw))
+    # 单调性：原 p 越小，校正后越小
+    order = sorted(range(len(raw)), key=lambda i: raw[i])
+    assert all(adj[order[i]] <= adj[order[i + 1]] + 1e-12
+               for i in range(len(order) - 1))
+
+
+def test_nemenyi_cd_grows_with_k():
+    from swarm_alloc.evaluation.score import nemenyi_cd
+    cds = [nemenyi_cd(k, 50) for k in (2, 4, 8, 10)]
+    assert cds == sorted(cds)
+    assert nemenyi_cd(10, 50) > 1.5
+
+
+def test_significance_columns_present():
+    out = score_relative(_toy())
+    for col in ("p_a", "sig_a", "p_b", "sig_b", "p_d", "sig_d", "p_e", "sig_e"):
+        assert col in out.columns
+    # 基线对自身必然不显著
+    assert out.loc["greedy", "sig_a"] == "n.s."
+
+
+def test_pareto_reports_multiple_planes():
+    b = score_pareto(_toy())
+    assert set(b["pareto_by_plane"]) == {"a_gain × d_cost", "b_threat × d_cost",
+                                         "b_threat × time_s"}

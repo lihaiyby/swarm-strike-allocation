@@ -61,6 +61,14 @@ TIME_MODES = {
 _Q_ALPHA_05 = {2: 1.960, 3: 2.343, 4: 2.569, 5: 2.728,
                6: 2.850, 7: 2.949, 8: 3.031, 9: 3.102, 10: 3.164}
 
+# 逐场景比值如何汇聚成一个数（P3.7）
+AGG_MODES = {
+    "mean": "算术平均（默认）——对极端场景敏感",
+    "median": "中位数——抗离群",
+    "geomean": "几何平均——比值的标准做法，不受 Jensen 偏置",
+    "ratio_of_means": "先求均值再相除（= Σa/Σa_base）",
+}
+
 _EPS = 1e-12
 
 
@@ -117,20 +125,103 @@ def _ratio_frames(piv: dict, baseline: str, time_mode: str,
     return out
 
 
+def _aggregate(r: pd.Series, mode: str = "mean",
+               num: pd.Series | None = None, den: pd.Series | None = None) -> float:
+    """把一个逐场景比值序列汇聚成一个标量（P3.7）。"""
+    if mode == "mean":
+        return float(r.mean())
+    if mode == "median":
+        return float(r.median())
+    if mode == "geomean":
+        return float(np.exp(np.log(r.clip(lower=_EPS)).mean()))
+    if mode == "ratio_of_means":
+        if num is None or den is None:
+            raise ValueError("ratio_of_means 需要提供 num/den 原始序列")
+        return float(num.mean() / max(den.mean(), _EPS))
+    raise ValueError(f"未知 agg: {mode!r}；可选 {sorted(AGG_MODES)}")
+
+
+def _holm(pvals: list) -> list:
+    """Holm–Bonferroni 校正（族错误率控制）。"""
+    m = len(pvals)
+    order = np.argsort(pvals)
+    adj = np.empty(m)
+    running = 0.0
+    for rank, idx in enumerate(order):
+        val = min(1.0, (m - rank) * float(pvals[idx]))
+        running = max(running, val)
+        adj[idx] = running
+    return adj.tolist()
+
+
+def _star(p: float) -> str:
+    if not np.isfinite(p):
+        return "n/a"
+    if p < 1e-3:
+        return "***"
+    if p < 1e-2:
+        return "**"
+    if p < 0.05:
+        return "*"
+    return "n.s."
+
+
+def _sig_vs_baseline(piv: dict, baseline: str, metric: str,
+                     higher_better: bool) -> dict:
+    """各算法相对基线的 Wilcoxon 符号秩检验 p 值（Holm 校正）。"""
+    from scipy.stats import wilcoxon
+
+    base = piv[baseline]
+    algos = sorted(piv)
+    raw = []
+    for a in algos:
+        if a == baseline:
+            raw.append(1.0)
+            continue
+        common = base.index.intersection(piv[a].index)
+        x, y = piv[a].loc[common, metric], base.loc[common, metric]
+        try:
+            _, p = wilcoxon(x.to_numpy(), y.to_numpy())
+            raw.append(float(p))
+        except ValueError:                      # 全部相等，无法检验
+            raw.append(1.0)
+    adj = _holm(raw)
+    return dict(zip(algos, adj))
+
+
+def nemenyi_cd(k: int, n_scenes: int) -> float:
+    """Nemenyi 临界差异 CD = q_α·√(k(k+1)/6N)（α=0.05，双侧）。"""
+    if k < 2 or n_scenes <= 0:
+        return float("nan")
+    return float(_Q_ALPHA_05.get(k, 3.164) * np.sqrt(k * (k + 1) / (6.0 * n_scenes)))
+
+
 # --------------------------------------------------------------------------
 # 方案 A：相对基准分
 # --------------------------------------------------------------------------
 
 def score_relative(df: pd.DataFrame, weights: dict | None = None,
                    baseline: str = "greedy", time_mode: str = "threshold",
-                   time_limit_s: float = 6.0) -> pd.DataFrame:
+                   time_limit_s: float = 6.0, agg: str = "mean",
+                   significance: bool = True) -> pd.DataFrame:
     """方案 A —— 以基线算法为 1.000 的相对分。
 
     逐场景先算 `r_i(s) = 指标_i(算法) / 指标_i(基线)`（e 按 `time_mode` 处理），
-    再对场景取均值，最后按权重求和。
+    再按 `agg` 汇聚（默认算术平均），最后按权重求和。
 
-    返回 DataFrame（index=algo）：`r_a`、`r_b`、`r_d`、`r_e`、`score`、`rank`、`n_scene`。
+    参数
+    ----
+    agg : `mean` / `median` / `geomean` / `ratio_of_means`，见 `AGG_MODES`。
+          比值型数据推荐 `geomean`（不受 Jensen 偏置）。
+    significance : 为 True 时额外给出各指标相对基线的 Wilcoxon p 值（Holm 校正）
+          与显著性星号列 `sig_a/sig_b/sig_d/sig_e`——**比值本身不含统计信息**，
+          0.3% 的差距可能只是噪声（见 P3.7）。
+
+    返回 DataFrame（index=algo）：`r_a`~`r_e`、`score`、`rank`、`n_scene`
+    （开启 `significance` 时另有 `p_*` 与 `sig_*`）。
     """
+    if agg not in AGG_MODES:
+        raise ValueError(f"未知 agg: {agg!r}；可选 {sorted(AGG_MODES)}")
     w = _normalize_weights(weights)
     piv = _pivot(df)
     if baseline not in piv:
@@ -139,13 +230,33 @@ def score_relative(df: pd.DataFrame, weights: dict | None = None,
 
     rows = []
     for algo, r in ratios.items():
-        means = {c: float(r[c].mean()) for c in METRICS}
+        common = r["time_s"].index
+        vals = {}
+        for c in METRICS:
+            if agg == "ratio_of_means":
+                if c == "time_s":
+                    # e 不是"指标比"，无法用均值之比；退回算术平均
+                    vals[c] = _aggregate(r[c], "mean")
+                else:
+                    vals[c] = _aggregate(r[c], agg,
+                                         num=piv[algo].loc[common, c],
+                                         den=piv[baseline].loc[common, c])
+            else:
+                vals[c] = _aggregate(r[c], agg)
         rows.append(dict(algo=algo,
-                         r_a=means["a_gain"], r_b=means["b_threat"],
-                         r_d=means["d_cost"], r_e=means["time_s"],
-                         score=sum(w[c] * means[c] for c in w),
-                         n_scene=len(r["time_s"])))
+                         r_a=vals["a_gain"], r_b=vals["b_threat"],
+                         r_d=vals["d_cost"], r_e=vals["time_s"],
+                         score=sum(w[c] * vals[c] for c in w),
+                         n_scene=len(common)))
     out = pd.DataFrame(rows).set_index("algo")
+
+    if significance:
+        alias = {"a_gain": "a", "b_threat": "b", "d_cost": "d", "time_s": "e"}
+        for m, (_, hb) in METRICS.items():
+            ps = _sig_vs_baseline(piv, baseline, m, hb)
+            out[f"p_{alias[m]}"] = [ps[a] for a in out.index]
+            out[f"sig_{alias[m]}"] = [_star(ps[a]) for a in out.index]
+
     out["rank"] = out["score"].rank(ascending=False, method="min").astype(int)
     return out.sort_values("score", ascending=False)
 
@@ -157,19 +268,21 @@ def score_relative(df: pd.DataFrame, weights: dict | None = None,
 def score_risk_adjusted(df: pd.DataFrame, weights: dict | None = None,
                         baseline: str = "greedy", lam: float = 1.0,
                         time_mode: str = "threshold",
-                        time_limit_s: float = 6.0) -> pd.DataFrame:
+                        time_limit_s: float = 6.0, agg: str = "mean") -> pd.DataFrame:
     """方案 C —— 方案 A 的逐场景比值再做 `mean − λ·std`。
 
     指标 c（稳定性）由此自然进入总分：波动大的算法被扣分，λ 控制惩罚强度。
-    λ=0 时结果与方案 A 完全相同。
+    λ=0 且 `agg="mean"` 时结果与方案 A 完全相同。
     """
+    if agg not in AGG_MODES:
+        raise ValueError(f"未知 agg: {agg!r}；可选 {sorted(AGG_MODES)}")
     w = _normalize_weights(weights)
     piv = _pivot(df)
     ratios = _ratio_frames(piv, baseline, time_mode, time_limit_s)
 
     rows = []
     for algo, r in ratios.items():
-        adj = {c: float(r[c].mean() - lam * r[c].std(ddof=1)) for c in METRICS}
+        adj = {c: _aggregate(r[c], agg) - lam * float(r[c].std(ddof=1)) for c in METRICS}
         rows.append(dict(algo=algo,
                          adj_a=adj["a_gain"], adj_b=adj["b_threat"],
                          adj_d=adj["d_cost"], adj_e=adj["time_s"],
@@ -253,18 +366,28 @@ def significance_test(df: pd.DataFrame, metric: str, higher_better: bool = True)
 def score_pareto(df: pd.DataFrame, dims=("b_threat", "d_cost")) -> dict:
     """方案 B —— 不给单一总分，只给可比较的结构化证据。
 
-    包含四件东西：
+    包含五件东西：
     1. `means`：各算法指标均值表；
-    2. `pareto`：指定二维平面上的非支配集合（帕累托前沿）；
-    3. `win_matrix`：逐场景两两胜负次数（四指标合计）；
-    4. `stats`：每个指标的显著性检验 + 平均秩 + Nemenyi CD。
+    2. `pareto`：`dims` 指定平面上的非支配集合；
+    3. `pareto_by_plane`：三组常用二维平面的前沿（a–d / b–d / b–e），
+       用来暴露"**前沿依赖你选哪两个维度**"这件事；
+    4. `win_matrix`：逐场景两两胜负次数（四指标合计）；
+    5. `stats`：每个指标的显著性检验 + 平均秩 + Nemenyi CD。
     """
     piv = _pivot(df)
     means = pd.DataFrame({a: piv[a][list(METRICS)].mean() for a in piv}).T[list(METRICS)]
 
-    plane = pd.DataFrame(index=means.index)
-    for d in dims:
-        plane[d] = means[d] if METRICS[d][1] else -means[d]
+    def _front(axes):
+        plane = pd.DataFrame(index=means.index)
+        for d in axes:
+            if d not in METRICS:
+                raise ValueError(f"未知维度 {d!r}；可选 {sorted(METRICS)}")
+            plane[d] = means[d] if METRICS[d][1] else -means[d]
+        return _pareto_front(plane)
+
+    planes = {("a_gain", "d_cost"): None, ("b_threat", "d_cost"): None,
+              ("b_threat", "time_s"): None}
+    pareto_by_plane = {f"{x} × {y}": _front((x, y)) for x, y in planes}
 
     algos = sorted(piv)
     win = pd.DataFrame(0, index=algos, columns=algos, dtype=int)
@@ -281,7 +404,9 @@ def score_pareto(df: pd.DataFrame, dims=("b_threat", "d_cost")) -> dict:
 
     stats = {m: significance_test(df, m, hb) for m, (_, hb) in METRICS.items()}
     return dict(means=means, pareto_dimensions=list(dims),
-                pareto=_pareto_front(plane), win_matrix=win, stats=stats)
+                pareto=pareto_by_plane[f"{dims[0]} × {dims[1]}"],
+                pareto_by_plane=pareto_by_plane,
+                win_matrix=win, stats=stats)
 
 
 # --------------------------------------------------------------------------
@@ -294,7 +419,8 @@ def _fmt_ranks(s: pd.Series) -> str:
 
 def format_report(df: pd.DataFrame, baseline: str = "greedy",
                   weights: dict | None = None, time_mode: str = "threshold",
-                  time_limit_s: float = 6.0, lam: float = 1.0) -> str:
+                  time_limit_s: float = 6.0, lam: float = 1.0,
+                  agg: str = "mean") -> str:
     w = _normalize_weights(weights)
     L = []
     add = L.append
@@ -303,25 +429,34 @@ def format_report(df: pd.DataFrame, baseline: str = "greedy",
     add("=" * 78)
     alias = {"a_gain": "a", "b_threat": "b", "d_cost": "d", "time_s": "e"}
     wtxt = "  ".join(f"{alias[k]}={v:.2f}" for k, v in w.items())
-    add(f"基线={baseline}   权重[{wtxt}]   时间模式={time_mode}(limit={time_limit_s}s)   λ={lam}")
+    add(f"基线={baseline}   权重[{wtxt}]   时间模式={time_mode}(limit={time_limit_s}s)"
+        f"   λ={lam}   agg={agg}")
     add(f"数据：{df.algo.nunique()} 个算法 × {df.seed.nunique()} 个场景")
 
-    a = score_relative(df, weights, baseline, time_mode, time_limit_s)
-    c = score_risk_adjusted(df, weights, baseline, lam, time_mode, time_limit_s)
+    a = score_relative(df, weights, baseline, time_mode, time_limit_s, agg=agg)
+    c = score_risk_adjusted(df, weights, baseline, lam, time_mode, time_limit_s, agg=agg)
     b = score_pareto(df)
 
     add("\n" + "-" * 78)
     add("方案 A · 相对基准分（基准 = 1.000，>1 优于基线）")
+    add("   显著性： vs 基线的 Wilcoxon 符号秩检验，Holm 校正；***p<.001 **p<.01 *p<.05")
     add("-" * 78)
-    add(a.to_string(float_format=lambda x: f"{x:.4f}"))
+    base_cols = ["r_a", "r_b", "r_d", "r_e", "score", "rank"]
+    view = a[base_cols].copy()
+    for m, al in alias.items():
+        view[f"sig_{al}"] = a[f"sig_{al}"]
+    add(view.to_string(float_format=lambda x: f"{x:.4f}"))
 
     if time_mode == "threshold" and a["r_e"].nunique() == 1:
         add(f"\n  ⚠️ 所有算法均满足 {time_limit_s}s 门槛 → e 不再区分，但仍占 "
             f"{w.get('time_s', 0):.0%} 权重，会把所有分数向 1.0 压缩。"
             f"\n     若想让 e 参与区分，改用 --time-mode ratio 或调小 --time-limit。")
+    if time_mode == "threshold":
+        add(f"\n  ⚠️ 门槛 {time_limit_s}s 是**每场累计**耗时的人为取值；方案04-v3 的原文规则是"
+            f"\"单轮 ≤1 s\"。\n     exp1 目前没记录逐轮耗时，故此处为近似——见任务 P3.6 备注。")
 
     add("\n" + "-" * 78)
-    add("方案 C · 风险调整分（mean − λ·std；λ=0 时等于方案 A）")
+    add("方案 C · 风险调整分（mean − λ·std；λ=0 且 agg=mean 时等于方案 A）")
     add("-" * 78)
     add(c.to_string(float_format=lambda x: f"{x:.4f}"))
 
@@ -330,26 +465,46 @@ def format_report(df: pd.DataFrame, baseline: str = "greedy",
     add("-" * 78)
     add("(1) 指标均值")
     add(b["means"].to_string(float_format=lambda x: f"{x:.4f}"))
-    add(f"\n(2) 帕累托前沿（维度 {b['pareto_dimensions']}，统一为越大越好）")
-    add(f"    {b['pareto']}")
+    add("\n(2) 帕累托前沿（统一为越大越好）——注意：前沿依赖你选哪两个维度")
+    for plane, front in b["pareto_by_plane"].items():
+        add(f"    {plane:<22} {front}")
     add("\n(3) 逐场景胜负矩阵（行赢列的次数，四指标合计）")
     add(b["win_matrix"].to_string())
     add("\n(4) 显著性检验（α=0.05）")
     for m, st in b["stats"].items():
         add(f"    {METRICS[m][0]:<16} {st['test']:<9} 平均秩={_fmt_ranks(st['avg_rank'])}"
             f"  p={st['p_value']:.4g}  CD={st['cd']:.3f}")
+        if st["p_value"] > 0.05:
+            add("        ⚠️ 整体检验不显著 → 该指标上所有算法的平均秩差异不可解读")
         for pr in st["significant_pairs"]:
             add(f"        {pr['pair']:<24} |Δ秩|={pr['rank_diff']:.2f}  "
                 f"{'显著' if pr['significant'] else '不显著'}")
+
+    k = df.algo.nunique()
+    N = df.seed.nunique()
+    if k >= 8:
+        add(f"\n  ⚠️ k={k} 时 Nemenyi CD = {nemenyi_cd(k, N):.3f}，"
+            f"|Δ秩| 需超过该值才算显著；算法越多越难分辨，建议增加场景数 N。")
 
     add("\n" + "-" * 78)
     add("时间模式敏感性（方案 A 的总分）")
     add("-" * 78)
     tab = {}
     for mode in ("threshold", "ratio", "rank"):
-        tab[mode] = score_relative(df, weights, baseline, mode, time_limit_s)["score"]
+        tab[mode] = score_relative(df, weights, baseline, mode, time_limit_s,
+                                   agg=agg)["score"]
     add(pd.DataFrame(tab).to_string(float_format=lambda x: f"{x:.4f}"))
     add("  → 同一份数据，仅因 e 的计分语义不同，排序就可能改变。这就是 D3 必须先拍板的原因。")
+
+    add("\n" + "-" * 78)
+    add("聚合方式敏感性（方案 A 的 r_a）")
+    add("-" * 78)
+    tab2 = {}
+    for mode in ("mean", "median", "geomean", "ratio_of_means"):
+        tab2[mode] = score_relative(df, weights, baseline, time_mode, time_limit_s,
+                                    agg=mode)["r_a"]
+    add(pd.DataFrame(tab2).to_string(float_format=lambda x: f"{x:.4f}"))
+    add("  → 若四种口径排序不一致，说明结果被少数极端场景驱动，应改用 median/geomean。")
 
     add("\n" + "-" * 78)
     add("结论")
@@ -367,6 +522,7 @@ def main():
     ap.add_argument("--time-mode", default="threshold", choices=sorted(TIME_MODES))
     ap.add_argument("--time-limit", type=float, default=6.0)
     ap.add_argument("--lam", type=float, default=1.0)
+    ap.add_argument("--agg", default="mean", choices=sorted(AGG_MODES))
     ap.add_argument("--equal-weights", action="store_true")
     args = ap.parse_args()
 
@@ -375,7 +531,7 @@ def main():
     df = pd.read_csv(csv)
     weights = EQUAL_WEIGHTS if args.equal_weights else DEFAULT_WEIGHTS
     print(format_report(df, args.baseline, weights, args.time_mode,
-                        args.time_limit, args.lam))
+                        args.time_limit, args.lam, args.agg))
 
 
 if __name__ == "__main__":
