@@ -144,13 +144,33 @@ git log --oneline -3
 
 | 症状 | 原因 | 处理 |
 |---|---|---|
-| `git push` 报 `Connection was reset` / `Failed to connect ... port 443` | **不是网络不通**：本机系统代理 `127.0.0.1:7897` 开着，Edge 走它所以能上 GitHub；但 **git 不读 Windows Internet 设置**，`HTTP_PROXY`/`HTTPS_PROXY`/`git http.proxy` 皆空 → git 直连，TCP 能通、TLS 被重置 | 显式指定代理，见 §6.2 |
+| `git push` 报 `Connection was reset` / `Failed to connect ... port 443` | **不是网络不通**：本机系统代理 `127.0.0.1:7897` 开着，Edge 走它所以能上 GitHub；但 **git 不读 Windows Internet 设置**，`HTTP_PROXY`/`HTTPS_PROXY`/`git http.proxy` 皆空 → git 直连，TCP 能通、TLS 被重置 | 显式指定代理，见 §6.3 |
 | `git push` 报 `couldn't create signal pipe, Win32 error 5` 或 `could not read Username` | 沙箱禁止创建命名管道，git 凭据助手（Windows 凭据管理器）无法运行 | **以完全权限推送** |
 | `git commit` 报 `Unable to create .git/index.lock: Permission denied` | DSH 沙箱的受限令牌写不进 `.git`（ACL 已补当前用户完全控制并验证，仍被拒） | **以完全权限执行 `git add/commit`** |
 | `git clone/push` 报 `SEC_E_NO_CREDENTIALS` | 本机 `schannel` TLS 后端不可用 | 一律加 `-c http.sslBackend=openssl` |
 | `pytest` 报 `could not create cache path ... Permission denied` | 残留 `pytest-cache-files-*` 目录 | 已清理；如再出现，删除该目录即可 |
+| 命令突然变得极慢：`import numpy` 要 30~40 s、正常只需 0.6 s | **Windows 安全中心（`SecurityHealthHost.exe`）多实例卡死**（正常 1 个，异常时 6 个，各累计数百秒 CPU），把磁盘 I/O 堵死。触发条件：短时间生成大量新文件（本项目每轮会写 pkl + 数十张 PNG） | ① `Stop-Process -Name SecurityHealthHost -Force`（会自动重启）；② 无效则重启；③ 长期方案见 §6.2 排除项 |
 
-### 6.2 推送命令（复制即用）
+### 6.2 本机性能设置（2026-10-29 已配置）
+
+为避免上述安全中心问题复现，已为开发目录添加 Defender 排除项（**实时保护保持开启**）：
+
+| 排除路径 | 说明 |
+|---|---|
+| `D:\deepseek-workspace` | 本项目与全部工作区 |
+| `D:\python` | Python 安装与 site-packages |
+| `%LOCALAPPDATA%\pip\Cache` | pip 缓存 |
+
+- 作用：**`import numpy+pandas+matplotlib` 从 4.39 s → 0.62 s（约 7×）**，`pytest` 全量 7.25 s。
+- 未添加扩展名/进程级排除（`.pkl`、`python.exe`）——那会显著降低保护，本次刻意不做。
+- 复现命令（**需管理员**；本机 UAC 为 `ConsentPromptBehaviorAdmin=0`，管理员提权不弹窗）：
+  ```powershell
+  Start-Process powershell -Verb RunAs -Wait -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','D:\deepseek-workspace\setup_defender_exclusions.ps1'
+  ```
+- 该脚本与运行日志放在仓库外的 `D:\deepseek-workspace\`（`setup_defender_exclusions.ps1`、`_defender_setup_log.txt`）。
+- ⚠️ 脚本必须是**纯 ASCII**：Windows PowerShell 5.1 会把无 BOM 的 UTF-8 当 ANSI 读，含中文会导致解析失败（exit 1、无日志）。
+
+### 6.3 推送命令（复制即用）
 
 **先判断代理是否开启**：
 
@@ -179,10 +199,11 @@ git -c http.sslBackend=openssl push origin main
 
 ---
 
-## 7. 当前优先级（2026-10-23）
+## 7. 当前优先级（2026-10-29 更新）
 
-1. **D2 待拍板**：指标 b 用哪种群定义（推荐真值团）→ 解锁 P0.1/P0.6/R3；
-2. **P0.3 可立即做**：ga_iap 去墙钟截断（零依赖）；
-3. 之后按 `docs/擂台改造-任务清单.md` §9 的顺序推进。
+1. **R3 修订复现01 文档** —— 欠账最久。该文档 §7 的核心结论（b 由 0.996 跌至 0.397）已被证伪：新口径下 greedy **0.998** vs ga_iap **0.889**。建议先出 markdown 修订稿再回写 docx。
+2. **D3 定评估权重 A~E** —— `eval.yaml` 五个权重仍是 `null`。a 与 b 各有冠军、档位还会让综合冠军翻转，不定权重就出不了唯一排名。
+3. **P3.5 消融 / 灵敏度** —— 配比、威胁度、杀伤参数各一组对照。
+4. 未做：P0.4（X 守卫）、P0.5 的 ③④、D4（C3）、D5（时间耦合）。
 
-> 详细依赖图见任务清单 §9。
+> 详细依赖图见任务清单 §9；当前进度见进度记录顶部快照。

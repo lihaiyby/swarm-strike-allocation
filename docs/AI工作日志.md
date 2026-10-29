@@ -1,4 +1,4 @@
-﻿# AI 工作日志 · 及 GitHub 同步记录
+# AI 工作日志 · 及 GitHub 同步记录
 
 > 用途：**每一次 AI 会话/改动**都必须在这里留一条记录，并同步登记是否已推送到 GitHub。
 > 配套规约：[AGENTS.md](../AGENTS.md)（四件套维护要求）。
@@ -52,6 +52,61 @@
 ---
 
 ## 日志
+
+### 2026-10-29 20:15 · R3：复现01 修订稿（核心结论被证伪 5 倍）
+
+**任务**：R3 —— 复现01 文档 §7 的结论在 b 口径变更后已不成立，先出 markdown 修订稿供评审，再回写 docx。
+
+**改动**
+| 文件 | 类型 | 说明 |
+|---|---|---|
+| `docs/algorithms/复现01-修订稿.md` | 新增 | 逐节「原文 → 替换文」；8 节改动清单、三档新增表、4 个待确认点、数字来源对照 |
+| `docs/擂台改造-任务清单.md` / `进度记录.md` | 修改 | R3 状态与结论 |
+| `_probe/probe_r3.py` | 新增（临时目录，不入库） | 单场景 t=0 四方对比 + 50 场景配对效应量 |
+
+**符号变动**：无（本轮只新增文档与分析脚本，未改任何代码符号）。
+
+**验证**
+- `pytest tests/ -q` → 83 passed（未动源码）
+- 数字均可从 `results/exp1*/`、`results/three_factor/` 复核
+
+**结论**
+- 原文 `ga_iap` 的 b = **0.397**，新口径实为 **0.8887**；greedy 为 0.9983。**方向对、量级错约 5 倍**。
+- b 的差距集中在极少数场景：仅 12/50 低于 0.8、仅 2/50 低于 0.5，中位数 0.938、20/50 满分。
+- 单场景 t=0 表也要换：`ga_iap` 第一轮只出动 55/102 架、单轮 b=0.303——**单轮指标不能评价该算法**（对照 `myopic_opt` 单轮 a 最高但 50 场景均值只有 216.5）。
+- 三档数据把结论改写为"取决于兵力"：2.5n 起 a 反超（+6.8%），2.0n 达 +15.4%，gap_a 只有 greedy 的一半。
+
+**提交**：`<本轮 commit>`
+**推送**：✅ 见同步状态
+
+---
+
+### 2026-10-29 20:05 · 环境：为开发目录添加 Defender 排除项（提升约 7×）
+
+**任务**：非任务清单条目，属**机器环境优化**。背景：19:00–19:20 期间 Windows 安全中心（`SecurityHealthHost.exe`）出现 6 个实例卡死，把磁盘 I/O 堵死，`import numpy` 从 0.6 s 恶化到 38 s；用户重启后恢复，遂按"路线 A"加排除项防止复发。
+
+**改动**
+| 文件 | 类型 | 说明 |
+|---|---|---|
+| `D:\deepseek-workspace\setup_defender_exclusions.ps1` | 新增（**仓库外**） | 纯 ASCII 的提权脚本：加 3 条排除路径并回读校验 |
+| Windows Defender 配置 | 修改 | 新增排除路径 `D:\deepseek-workspace`、`D:\python`、`%LOCALAPPDATA%\pip\Cache` |
+| `AGENTS.md` | 修改 | 新增 §6.1 最后一行（安全中心卡死症状）+ **§6.2 本机性能设置**；原推送命令顺延为 §6.3 并修正交叉引用；§7 优先级更新到 2026-10-29 |
+
+**验证**
+- 提权脚本退出码 **0**，日志 `D:\deepseek-workspace\_defender_setup_log.txt` 显示三条 `OK`
+- 保护状态**未被削弱**：`RealTimeProtectionEnabled=True`、`AntivirusEnabled=True`、`IsTamperProtected=True`
+- 性能：`import numpy+pandas+matplotlib` **4.39 s → 0.62 s（约 7×）**；`pytest tests/ -q` **7.25 s / 83 passed**；读 `scenes_normal.pkl` 0.16 s
+
+**结论**
+- 本机 **UAC 为 `ConsentPromptBehaviorAdmin=0`**（管理员提权不弹窗），且账户属于 `BUILTIN\Administrators`，因此 `Start-Process -Verb RunAs` 可静默提权——这也是后续自动化系统配置的可行路径。
+- 踩到一个坑：**提权 PowerShell 脚本必须纯 ASCII**。首次脚本含中文，Windows PowerShell 5.1 按 ANSI 解析导致 `exit 1` 且日志未生成；改为纯英文后一次通过。
+- 现有排除表里原本已有 `C:\`、`C:\Program Files (x86)\` 等大范围条目（非本次添加），说明本机防护此前已被放宽过。
+- **未做**：`.pkl` 扩展名排除、`python.exe` 进程排除——会显著降低保护，按用户要求保持"只排目录"。
+
+**提交**：`<本轮 commit>`
+**推送**：✅ 见同步状态
+
+---
 
 ### 2026-10-29 19:45 · P3.1–P3.4：三因子主实验与统计图
 
