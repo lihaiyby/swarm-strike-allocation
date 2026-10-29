@@ -1,0 +1,5 @@
+algo,easy,normal,hard
+ga_iap,3,2,1
+greedy,1,1,2
+myopic_opt,4,4,4
+random_feasible,2,3,3
