@@ -30,3 +30,14 @@ seeds: [1000, 1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009,
 perception:
   eps_m: 550          # k-distance 图标定（results/eps_calibration.png，拐点中位数 553m）
   min_samples: 3
+
+# 编制档位（P2.1，2026-10-29 决策 D1 = 保守方案）
+# 我方兵力 = ratio × n。3.0 为原方案（easy，默认、向后兼容）；
+# 2.5 消除"随机≈贪心"病态（差距 0.5%→8.7%），2.0 出现冠军翻转。
+# 依据见 docs/擂台改造-进度记录.md 2026-10-29 18:05（exp5 反事实实验）。
+# 注意：这里只定义档位，**不改** friendly.count_ratio —— 不指定档位时行为与以前完全一致。
+tiers:
+  easy: 3.0
+  normal: 2.5
+  hard: 2.0
+tier_default: easy   # data/scenes.pkl 对应 easy；其余档写入 data/scenes_<tier>.pkl

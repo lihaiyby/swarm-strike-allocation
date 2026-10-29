@@ -1,4 +1,4 @@
-﻿# AI 工作日志 · 及 GitHub 同步记录
+# AI 工作日志 · 及 GitHub 同步记录
 
 > 用途：**每一次 AI 会话/改动**都必须在这里留一条记录，并同步登记是否已推送到 GitHub。
 > 配套规约：[AGENTS.md](../AGENTS.md)（四件套维护要求）。
@@ -52,6 +52,38 @@
 ---
 
 ## 日志
+
+### 2026-10-29 18:35 · P2.1–P2.4：三档固化，50 场景全量确认冠军翻转
+
+**任务**：D1 已拍板（保守方案）→ P2.1（配置档位）/ P2.2（场景库拆档）/ P2.3（eps 复核）/ P2.4（单测）。
+
+**改动**
+| 文件 | 类型 | 说明 |
+|---|---|---|
+| `config/scenario.yaml` | 修改 | 新增 `tiers: {easy:3.0, normal:2.5, hard:2.0}` + `tier_default: easy`；不改 `friendly.count_ratio` |
+| `src/swarm_alloc/scenario/generator.py` | 修改 | `gen_scene(..., ratio=None)`、`tier_ratios()`、`scene_file()`、`build_tier()`；CLI 增 `--tiers/--all-tiers/--no-default` |
+| `experiments/exp1_main.py` | 修改 | 增 `--tier`；输出到 `results/exp1_<tier>/`；csv 增 `n_pool0`/`tier` |
+| `data/scenes_normal.pkl` / `scenes_hard.pkl` | 新增 | 各 50 场景；`scenes.pkl` **未重写** |
+| `tests/test_tiers.py` | 新增 | 20 项 |
+| `results/exp1`、`results/exp1_normal`、`results/exp1_hard` | 重新生成 | 50 场景全量，三档结构一致 |
+
+**验证**
+- `pytest tests/ -q` → **83 passed**
+- **向后兼容**：现场重算的 easy 档与现有 `data/scenes.pkl` **逐位一致（50/50）**
+- **可复现**：easy 档 50 场景重跑，`a_gain / b_threat / d_cost / used / destroyed / leaked / lost / gap_a / gap_b` **逐位差异全为 0**，仅 `time_s` 变化（墙钟，最大 5.8 s/场景）
+
+**结论**
+- **冠军翻转在 50 场景全量下确认**：`ga_iap` 名次 3→2→1，`greedy` 1→1→2，`random_feasible` 2→3→3，`myopic_opt` 恒第 4。
+- 分数（easy → normal → hard）：`ga_iap` 0.9501 → 0.9621 → **1.0204**；`greedy` 1.0000 → 1.0000 → 1.0000；`random` 0.9974 → 0.9199 → 0.9740。
+- **a 的冠军在 normal 就换成 ga_iap，b 的冠军始终是 greedy** → 冠军由 a/b 权重（D3）决定，档位只改变冲突尖锐度。
+- **"随机≈最优"病态消除**：greedy−random 差距 easy **0.0026** → normal **0.0801（31×）**。
+- **eps 不需要分档**：敌机分布与档位无关（单测断言三档敌机指纹相同）。
+- **新问题**：`ga_iap` 的 `r_e` 在 easy 档 0.8465、normal/hard 档 1.0000——同一算法仅因档位跨越了 6 s 门槛，说明"每场累计耗时"冒充"单轮耗时"不可靠，需补逐轮计时。
+
+**提交**：`<本轮 commit>`
+**推送**：✅ 见同步状态
+
+---
 
 ### 2026-10-29 18:05 · P2.0：编制档位反事实，D1 决策数据到手
 

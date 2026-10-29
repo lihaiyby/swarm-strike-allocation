@@ -26,10 +26,12 @@ from swarm_alloc.model import Model
 from swarm_alloc.simulation.simulate import simulate
 
 
-def run_all(algo_names: list, n_scenes: int) -> pd.DataFrame:
+def run_all(algo_names: list, n_scenes: int, tier: str | None = None) -> pd.DataFrame:
     scfg, etcfg = load("scenario"), load("enemy_types")
     model = Model(load("eval"))
-    with open(ROOT / "data" / "scenes.pkl", "rb") as f:
+    from swarm_alloc.scenario.generator import scene_file
+    path = ROOT / "data" / scene_file(tier, scfg)
+    with open(path, "rb") as f:
         scenes = pickle.load(f)[:n_scenes]
 
     # 上界只与场景有关，先算一次（P1.4：~10 ms/场景）
@@ -48,7 +50,8 @@ def run_all(algo_names: list, n_scenes: int) -> pd.DataFrame:
                              a_opt=ob.a_opt, b_opt=ob.b_opt, d_opt=ob.d_opt,
                              used_opt=ob.used,
                              gap_a=(ob.a_opt - r.a_gain) / ob.a_opt,
-                             gap_b=ob.b_opt - r.b_threat))
+                             gap_b=ob.b_opt - r.b_threat,
+                             n_pool0=len(s.friendly), tier=(tier or "base")))
             details[(name, s.seed)] = r
     return pd.DataFrame(rows), details
 
@@ -123,11 +126,16 @@ def main():
     ap.add_argument("--algos", nargs="+", default=None)
     ap.add_argument("--scenes", type=int, default=50)
     ap.add_argument("--detail-seed", type=int, default=1000)
+    ap.add_argument("--tier", default=None,
+                    help="编制档位（config/scenario.yaml → tiers）；缺省为默认档 scenes.pkl")
     args = ap.parse_args()
     algo_names = args.algos or available()
 
-    df, details = run_all(algo_names, args.scenes)
-    out_dir = ROOT / "results" / "exp1"
+    df, details = run_all(algo_names, args.scenes, tier=args.tier)
+    scfg = load("scenario")
+    from swarm_alloc.scenario.generator import scene_file
+    tier_dir = "exp1" if args.tier in (None, scfg.get("tier_default")) else f"exp1_{args.tier}"
+    out_dir = ROOT / "results" / tier_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     df.to_csv(out_dir / "exp1_metrics.csv", index=False)
 
@@ -139,8 +147,7 @@ def main():
 
     plot_metrics(df, out_dir / "metrics_dist.png")
 
-    scfg = load("scenario")
-    with open(ROOT / "data" / "scenes.pkl", "rb") as f:
+    with open(ROOT / "data" / scene_file(args.tier, scfg), "rb") as f:
         scenes = pickle.load(f)
     scene = next(s for s in scenes if s.seed == args.detail_seed)
     r = details[(algo_names[0], args.detail_seed)]
