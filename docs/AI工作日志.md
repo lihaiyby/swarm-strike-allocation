@@ -29,7 +29,7 @@
 | 远端 | `https://github.com/lihaiyby/swarm-strike-allocation.git` |
 | 分支 | `main` |
 | 本地 HEAD | 见 `git log --oneline -1` |
-| 最近一次成功推送 | **2026-10-29 18:5x ✅** 远端 `a30f715`（P2.1–P2.4：编制三档落地） |
+| 最近一次成功推送 | **2026-10-29 19:0x ✅** 远端 `a30f715`（P2.1–P2.4：编制三档落地）。其后仅剩"登记提交号"的 docs 提交待补推 |
 | 网络连通性 | **根因已查明（2026-10-23 21:00）**：本机开着系统代理 `127.0.0.1:7897`（Clash/Mihomo 一类），**Edge 走系统代理所以能上 GitHub；git 不读 Windows 的 Internet 设置**，`HTTP_PROXY`/`HTTPS_PROXY`/`git http.proxy` 三处皆空，于是 git 一直**直连**。直连时 TCP 握手能成（`Test-NetConnection github.com:443` → True，`20.205.243.166`），但 TLS 阶段被重置 → `Connection was reset`。<br>**经代理后完全正常**：`ls-remote` 秒回，`push` 成功。 |
 
 > **结论：不是网络不通，是 git 没走代理。** 以前记录的"GitHub 443 不可达"是误判，已更正。
@@ -42,7 +42,7 @@
 |---|---|
 | 待推送范围 | **无（队列已清空）** |
 | 查看命令 | `git log --oneline origin/main..HEAD` |
-| 当前远端位置 | `425253c`（与本地 HEAD 一致） |
+| 当前远端位置 | `a30f715`（P2.1–P2.4）；本地领先 1 个 docs 提交 |
 | 阻塞原因 | ~~网络不可达~~ → 实为「未配置代理」+「沙箱禁止命名管道导致凭据助手失效」，见下 |
 | 补推命令 | `git -c http.proxy=http://127.0.0.1:7897 -c https.proxy=http://127.0.0.1:7897 -c http.sslBackend=openssl push origin main`（**须以完全权限执行**） |
 | 补推后要做 | ① 把本表改为 ✅ 并写明推送时间；② 更新上方"最近一次成功推送" |
