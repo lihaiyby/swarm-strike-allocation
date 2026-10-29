@@ -29,7 +29,7 @@
 | 远端 | `https://github.com/lihaiyby/swarm-strike-allocation.git` |
 | 分支 | `main` |
 | 本地 HEAD | 见 `git log --oneline -1` |
-| 最近一次成功推送 | **2026-10-25 12:3x ✅** 远端 `4ca7ee9`（P3.6：三套总分接口） |
+| 最近一次成功推送 | **2026-10-29 17:5x ✅** 远端 `14b8796`（P3.7：打分接口可扩展性加固） |
 | 网络连通性 | **根因已查明（2026-10-23 21:00）**：本机开着系统代理 `127.0.0.1:7897`（Clash/Mihomo 一类），**Edge 走系统代理所以能上 GitHub；git 不读 Windows 的 Internet 设置**，`HTTP_PROXY`/`HTTPS_PROXY`/`git http.proxy` 三处皆空，于是 git 一直**直连**。直连时 TCP 握手能成（`Test-NetConnection github.com:443` → True，`20.205.243.166`），但 TLS 阶段被重置 → `Connection was reset`。<br>**经代理后完全正常**：`ls-remote` 秒回，`push` 成功。 |
 
 > **结论：不是网络不通，是 git 没走代理。** 以前记录的"GitHub 443 不可达"是误判，已更正。
@@ -74,8 +74,12 @@
 - **Nemenyi CD 随 k 快速衰减**：k=2→0.277、k=4→0.663、k=10→1.916。算法增到 8~10 时必须同步增加场景数。
 - 建议主表口径：`agg=geomean` + `time_mode=threshold` + **Holm 校正 Wilcoxon** 判显著性，附录附 Nemenyi CD 图作对照。
 
-**提交**：`<本轮 commit>`
-**推送**：✅ 见同步状态
+**提交**：`14b8796`
+**推送**：✅ 2026-10-29 17:5x 已推送（**直连**，`7366e38..14b8796`）
+
+**附：网络状态变更**
+系统代理 `ProxyEnable=0`（已关闭）、7897 端口不再监听，但 `github.com:443` 直连 TCP 可达 → **本机当前无需代理即可推送**。
+命令：`git -c http.sslBackend=openssl push origin main`（仅 openssl 后端仍必需）。`AGENTS.md §6.2` 的代理三件套改为"代理开启时才需要"。
 
 ---
 

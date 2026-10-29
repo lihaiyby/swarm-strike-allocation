@@ -150,15 +150,30 @@ git log --oneline -3
 | `git clone/push` 报 `SEC_E_NO_CREDENTIALS` | 本机 `schannel` TLS 后端不可用 | 一律加 `-c http.sslBackend=openssl` |
 | `pytest` 报 `could not create cache path ... Permission denied` | 残留 `pytest-cache-files-*` 目录 | 已清理；如再出现，删除该目录即可 |
 
-### 6.2 推送三件套（复制即用）
+### 6.2 推送命令（复制即用）
+
+**先判断代理是否开启**：
+
+```powershell
+(Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings').ProxyEnable
+```
+
+| `ProxyEnable` | 用哪条 |
+|---|---|
+| **1（开启）** | 必须显式给 git 指定代理（git 不读 Windows 的 Internet 设置） |
+| **0（关闭）** | 直连即可；若直连被重置，再按开启处理 |
 
 ```bash
+# 代理开启时
 git -c http.proxy=http://127.0.0.1:7897 \
     -c https.proxy=http://127.0.0.1:7897 \
     -c http.sslBackend=openssl push origin main
+
+# 代理关闭时（2026-10-29 实测可用）
+git -c http.sslBackend=openssl push origin main
 ```
 
-> **须以完全权限执行**（原因见 §6.1 第二行）。
+> `http.sslBackend=openssl` **两种情况都必须带**（`schannel` 会报 `SEC_E_NO_CREDENTIALS`）。
 > 代理端口若变更，改 `7897` 即可；查当前端口：
 > `Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings' | Select ProxyServer`
 
