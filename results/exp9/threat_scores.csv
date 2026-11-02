@@ -1,0 +1,17 @@
+variant,algo,score,rank
+entropy,ga_iap,1.0129989311357281,1
+entropy,greedy,1.0,2
+entropy,random_feasible,0.9441570179540116,3
+entropy,myopic_opt,0.40993920030529296,4
+equal,greedy,1.0,1
+equal,ga_iap,0.9913262781672235,2
+equal,random_feasible,0.9441570179540116,3
+equal,myopic_opt,0.40993920030529296,4
+random,greedy,1.0,1
+random,ga_iap,0.9781717498037968,2
+random,random_feasible,0.9706259701894027,3
+random,myopic_opt,0.4205732611629667,4
+value,greedy,1.0,1
+value,ga_iap,0.9983806437637106,2
+value,random_feasible,0.9437978646130964,3
+value,myopic_opt,0.40975149046920734,4
