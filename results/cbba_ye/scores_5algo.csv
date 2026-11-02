@@ -1,0 +1,16 @@
+tier,algo,score,rank
+easy,greedy,1.0,1
+easy,cbba_ye,0.9994137632279618,2
+easy,random_feasible,0.9982833457716319,3
+easy,ga_iap,0.9780673726873957,4
+easy,myopic_opt,0.3692031277683063,5
+normal,cbba_ye,1.0136822983475515,1
+normal,ga_iap,1.0026682717267794,2
+normal,greedy,1.0,3
+normal,random_feasible,0.9483270789847729,4
+normal,myopic_opt,0.40881454438206016,5
+hard,ga_iap,1.068328818781655,1
+hard,cbba_ye,1.021490248907078,2
+hard,greedy,1.0,3
+hard,random_feasible,0.9850730451369031,4
+hard,myopic_opt,0.5095469095284725,5
