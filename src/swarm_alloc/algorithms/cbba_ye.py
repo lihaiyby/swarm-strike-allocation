@@ -1,66 +1,90 @@
-"""叶赞 改进 CBBA（注册名 `cbba_ye`）—— 拍卖式 CBBA + 两处改进。
+"""叶赞 改进 CBBA（注册名 `cbba_ye`）—— 依据原文实现。
 
-⚠️ **务必先读：本实现的文献保真度说明**
-------------------------------------------------
-本机没有该文献的正文（AI-HANDOFF 只留了一行摘要：**"任务包双向构建 + 类别奖励"**）。
-因此本文件分两部分：
-
-1. **CBBA 主体（标准部分）**：按 Choi / Brunet / How (2009) 的 CBBA 框架实现
-   —— 出价（bid）→ 一致性协商（consensus）→ 冲突释放（release）→ 重出价。
-   这部分是公开的、可核对的。
-2. **两处"改进"（按摘要字面解读，待原文校准，均为可关闭开关）**：
-   - `CLASS_BONUS`（类别奖励）：对高价值类别（格斗型 / 范围伤害型，`value ≥ 10`）
-     的目标追加 `系数 × v_j` 的奖励，使其在拍卖中被更早抢到；
-   - `TWO_WAY`（双向构建）：正向拍卖结束后做**反向释放—重出价**，
-     **仅在目标函数变好时才接受**（否则回滚），保证不劣于正向解。
-   这两处的具体公式、参数与触发条件**没有原文依据**，是依据本项目语义做的合理猜测。
-   **拿到 PDF 后应优先核对这两处。** 另一种可能的解读（"类别奖励"= 补满整个
-   敌群时给奖励）保留在 `GROUP_BONUS` 开关里，默认关闭。
-
-本场景的适配（与原文的差异）
---------------------------
-- **每个我方无人机只能打一个目标**（自杀式，约束 C1）→ CBBA 的"任务包"退化为
-  **单槽包**，算法本质是**带容量约束的并行拍卖**。这是原文的多任务机器人与本项目
-  最本质的差异。
-- 目标有**配额下限**（C2：要么 0 架，要么 ≥ m_j）→ 拍卖后必须做**整包裁决**：
-  未满配额的目标要么补齐、要么整批撤单，否则解不可行。
-- 一致性协商在本项目是**集中式模拟**：所有"代理"共用一份出价表，按
-  `(出价高 → 距离近 → ID 小)` 决定归属。
-
-参数
+文献
 ----
-| 参数 | 默认 | 含义 |
+叶赞. 基于改进 CBBA 算法的风电场无人机群自主巡检任务分配[J].
+数字技术与应用, 2026(5): 238-240.
+
+原文的三处改进（**不是两处**，摘要只提了两处，正文还有价值函数）
+------------------------------------------------------------------
+1. **风机巡检价值评估函数**（式 1~3）:
+   ``W = W0 - (λ·W1 + μ·W2)``，其中 W1 是风速代价、W2 是海拔代价。
+2. **任务包双向构建策略**:
+   正向以初始机巢为起点、按"价值优先、能耗可控"依次添加任务；
+   反向以**所有机巢为潜在终点**反向追溯可覆盖的任务点；
+   两类包分别校验"最大航程 / 容量 / 无冲突"后进**候选任务包池**。
+3. **基于类别的奖励制度**（式 4~5）:
+   先用 **K-means** 把任务点与机巢聚类成若干区域；
+   再借人工势场思想，同类任务给奖励、异类无奖励；
+   ``G = ζ/2·d*``（同类）或 ``η/2``（异类），总收益 ``SP_i = ΣW_p + G_p``。
+
+原文的五阶段流程：初始化 → 双向任务包构建 → 任务共识 → **最优组合筛选（整数规划）** → 结束判断。
+
+移植到本项目的适配（逐条对照）
+------------------------------
+| 原文 | 本项目 | 处理 |
 |---|---|---|
-| `CLASS_BONUS` | 0.15 | 类别奖励系数（× `v_j`），仅对 `v_j ≥ CLASS_VALUE_FLOOR` |
-| `CLASS_VALUE_FLOOR` | 10 | 视为"高价值类别"的价值门槛 |
-| `GROUP_BONUS` | 0.0 | 备选解读：补满一个敌群时的奖励系数（× 群价值），默认关闭 |
-| `TWO_WAY` | True | 反向释放—重出价（**只在更优时接受**） |
-| `MAX_ROUNDS` | 6 | 正向拍卖轮数 |
-| `RELEASE_FRAC` | 0.15 | 反向轮释放比例 |
+| 价值函数含风速/海拔代价 | 无风场、无海拔、不建模飞行 | **不移植**，价值直接取场景给定的 `v_j` |
+| 每机任务包容量 4 | **每机只能打一个目标**（C1，自杀式） | bundle 退化为单槽；"容量"改指**目标的配额** $m_j$ |
+| 机巢 + 航程 45 km | 我方全部部署在内球面，**无航程约束** | 正向池按"离目标最近的我方机"取；反向池按"目标到部署中心距离"取 |
+| 整数规划选最优组合 | 同 | **槽展开 + 最大权二分匹配**（`scipy.linear_sum_assignment`） |
+| K-means 区域 + 同类奖励 | 目标有空间分布 | **照做**：对目标坐标聚类，同区奖励 |
+| 收益量纲 = 能耗(kWh) | 量纲 = 价值(2~10) | ζ/η 按 `v_j` 归一化（见 §参数），否则奖励被量纲淹没 |
+
+**忠实移植的关键一点**：原文的"整数规划确定最优任务包组合"在本项目可以**精确求解**——
+把目标 j 展开成 $m_j$ 个槽，第 s 个槽的边际价值为 $v_jp_j(1-p_j)^s$；
+这样"带容量的最大权分配"就等价于在槽上的**最大权二分匹配**，用 LSA 精确求解。
+这比 greedy 与拍卖都强，也是本实现的核心。
 """
 from __future__ import annotations
 
-from collections import defaultdict
-
 import numpy as np
+from scipy.optimize import linear_sum_assignment
 
 from ..model import Model
 from .base import AlgoBase, register
+
+_NEG = -1e9
+
+
+def _kmeans(pts: np.ndarray, k: int, iters: int = 30) -> tuple:
+    """极简 K-means（最远点初始化，确定性）。返回 (标签, 中心)。"""
+    n = len(pts)
+    k = max(1, min(k, n))
+    centers = [pts[int(np.argmin(pts[:, 0]))]]          # 最左点作首个中心
+    for _ in range(k - 1):
+        d = np.min(np.linalg.norm(pts[:, None, :] - np.array(centers)[None, :, :],
+                                  axis=2), axis=1)
+        centers.append(pts[int(np.argmax(d))])          # 最远点
+    C = np.array(centers, dtype=float)
+    labels = np.zeros(n, dtype=int)
+    for _ in range(iters):
+        dist = np.linalg.norm(pts[:, None, :] - C[None, :, :], axis=2)
+        new = np.argmin(dist, axis=1)
+        if np.array_equal(new, labels):
+            break
+        labels = new
+        for c in range(len(C)):
+            m = labels == c
+            if m.any():
+                C[c] = pts[m].mean(axis=0)
+    return labels, C
 
 
 @register
 class CBBAYe(AlgoBase):
     name = "cbba_ye"
 
-    CLASS_BONUS: float = 0.15
-    CLASS_VALUE_FLOOR: float = 10.0
-    GROUP_BONUS: float = 0.0
-    TWO_WAY: bool = True
-    MAX_ROUNDS: int = 6
-    RELEASE_FRAC: float = 0.15
+    # ---- 原文式(4)的两个增益常量（按 v_j 归一化，见模块文档）
+    ZETA: float = 0.30            # ζ：同类增益常量
+    ETA: float = 0.05             # η：异类增益常量
+    N_REGIONS: int = 0            # 0 = 自动取 min(4, 敌群数)
 
-    # ------------------------------------------------------------------
+    # ---- 双向构建的候选池倍数（每个目标保留最近/最远各若干架进池）
+    POOL_FACTOR: float = 2.0
+
     def solve(self, state, model: Model) -> np.ndarray:
+        # ---------------- 阶段1 初始化 ----------------
         eids, fids = state.enemy_ids, state.pool_ids
         X = np.zeros((len(fids), len(eids)), dtype=int)
         if not eids or not fids:
@@ -68,16 +92,14 @@ class CBBAYe(AlgoBase):
 
         values, p_kill, epos = state.enemy_matrix()
         fpos = state.pool_matrix()
+        self._fpos_cache = fpos
         quotas = np.array([model.quota(p, model.kill_threshold) for p in p_kill])
-
         eidx = {e: j for j, e in enumerate(eids)}
         group_of = {u: g.id for g in state.groups for u in g.member_ids}
         gmembers = {g.id: [eidx[u] for u in g.member_ids if u in eidx]
                     for g in state.groups}
-        gvalue = {g.id: float(sum(values[m] for m in gmembers[g.id]))
-                  for g in state.groups}
 
-        # 可行性恢复：资源不足时按威胁度保留高威胁群（与其它算法口径一致）
+        # 可行性恢复（与其它算法同口径）
         demand = {g: int(quotas[ms].sum()) for g, ms in gmembers.items() if ms}
         kept = model.select_groups(state.groups, demand, len(fids))
         allowed = {u for g in kept for u in g.member_ids}
@@ -87,142 +109,118 @@ class CBBAYe(AlgoBase):
             return X
 
         dist = np.linalg.norm(fpos[:, None, :] - epos[None, :, :], axis=2)
-        ctx = dict(values=values, p_kill=p_kill, quotas=quotas, dist=dist,
-                   group_of=group_of, gmembers=gmembers, gvalue=gvalue, cap=cap)
+        dmax = float(dist.max()) + 1e-9
 
-        # ---- 正向拍卖 ----
-        count = np.zeros(len(eids), dtype=int)
-        free = set(range(len(fids)))
-        for _ in range(self.MAX_ROUNDS):
-            if not free:
-                break
-            free = self._auction(X, free, count, ctx, eids)
-            free |= self._repair(X, count, ctx)      # 整包裁决，返回被撤单的机
+        # ---------------- 阶段2 双向任务包构建 → 候选池 ----------------
+        pool = self._build_candidate_pool(dist, cap, len(fids))
 
-        # ---- 反向释放—重出价（只在更优时接受）----
-        if self.TWO_WAY:
-            base_obj = self._objective(X, values, p_kill)
-            X2, cnt2 = X.copy(), count.copy()
-            freed = self._release_lowest(X2, cnt2, ctx)
-            for _ in range(self.MAX_ROUNDS):
-                if not freed:
-                    break
-                freed = self._auction(X2, freed, cnt2, ctx, eids)
-                freed |= self._repair(X2, cnt2, ctx)
-            if self._objective(X2, values, p_kill) > base_obj + 1e-9:
-                X, count = X2, cnt2
+        # ---------------- 阶段3 基于类别的奖励 ----------------
+        bonus = self._category_reward(epos, values, fpos, dist, dmax, dmax)
 
+        # ---------------- 阶段4/5 任务共识 + 最优组合筛选 ----------------
+        X = self._assign(pool, cap, values, p_kill, bonus, len(fids))
+
+        # ---------------- 整包裁决（保证 C2） ----------------
+        X = self._repair(X, cap, dist)
         return X
 
     # ------------------------------------------------------------------
-    # 出价
-    # ------------------------------------------------------------------
-    def _marginal(self, j, count, values, p_kill):
-        k = int(count[j])
-        return float(values[j] * p_kill[j] * (1.0 - p_kill[j]) ** k)
+    def _build_candidate_pool(self, dist, cap, n_f):
+        """双向构建候选池。
 
-    def _bonus(self, j, count, ctx, eids):
-        """类别奖励 + 可选的整群完成奖励。"""
-        b = 0.0
-        if self.CLASS_BONUS > 0 and ctx["values"][j] >= self.CLASS_VALUE_FLOOR:
-            b += self.CLASS_BONUS * float(ctx["values"][j])
-        if self.GROUP_BONUS > 0:
-            gid = ctx["group_of"].get(eids[j])
-            if gid is not None:
-                mem = ctx["gmembers"].get(gid, [])
-                if all(int(count[m]) + (1 if m == j else 0) >= ctx["cap"][m]
-                       for m in mem):
-                    b += self.GROUP_BONUS * ctx["gvalue"].get(gid, 0.0)
-        return b
-
-    def _auction(self, X, free, count, ctx, eids):
-        """一轮并行拍卖。返回本轮没抢到任何目标的机。
-
-        进入时**从 X 重算 count 并剔除已分配的机**，避免轮次间的状态漂移
-        （否则可能出现同一架机被指派两次，破坏 C1）。
+        - **正向**（从机巢出发，价值优先）：对每个目标取**距它最近**的若干架我机；
+        - **反向**（以机巢为潜在终点）：取**离部署中心最近**的我机（返程最省）。
+        两者取并集，即原文"合并后进入候选任务包池"。
         """
-        cap, dist = ctx["cap"], ctx["dist"]
-        count[:] = X.sum(axis=0)
-        free = {i for i in free if X[i].sum() == 0}
-
-        by_target = defaultdict(list)
-        for i in sorted(free):
-            best = None
-            for j in range(len(eids)):
-                if cap[j] == 0 or count[j] >= cap[j]:
-                    continue
-                s = self._marginal(j, count, ctx["values"], ctx["p_kill"])
-                if s <= 0:
-                    continue
-                s += self._bonus(j, count, ctx, eids)
-                key = (s, -float(dist[i, j]), -i)     # 出价高→距离近→ID 小
-                if best is None or key > best[0]:
-                    best = (key, j)
-            if best is not None:
-                by_target[best[1]].append((best[0], i))
-
-        nxt = set()
-        for j, cands in by_target.items():
-            cands.sort(reverse=True)
-            take = max(0, int(cap[j] - count[j]))
-            for _, i in cands[:take]:
-                X[i, j] = 1
-                count[j] += 1
-            for _, i in cands[take:]:
-                nxt.add(i)
-        return nxt
+        pool = np.zeros((n_f, len(cap)), dtype=bool)
+        order_near = np.argsort(dist, axis=0)                 # 每目标：近→远
+        base_rank = np.argsort(np.linalg.norm(
+            self._fpos_cache, axis=1))                        # 我机：离部署中心近→远
+        for j in range(len(cap)):
+            if cap[j] == 0:
+                continue
+            k = max(1, int(np.ceil(self.POOL_FACTOR * cap[j])))
+            pool[order_near[:k, j], j] = True                 # 正向
+            pool[base_rank[:k], j] = True                     # 反向
+        return pool
 
     # ------------------------------------------------------------------
-    # 整包裁决（保证 C2）
+    def _category_reward(self, epos, values, fpos, dist, dmax, _):
+        """式(4)：K-means 分区 + 同类奖励。
+
+        ``G = ζ/2 · v_j · (1 − d_ij/d_max)``  若 i 与 j 同区
+        ``G = η/2 · v_j``                     若异区
+
+        原文的 ζ/2·d* 中 d* 是"两点所属类中心的欧氏距离"，OCR 后公式有歧义；
+        这里取"无人机到目标所属类中心的距离"，并让奖励随距离**递减**
+        （符合人工势场"引力"的语义）。按 v_j 归一化以匹配本项目量纲。
+        """
+        n_t = len(values)
+        k = self.N_REGIONS or int(min(4, max(1, n_t // 12)))
+        labels, _ = _kmeans(epos, k)
+        # 每架机归属最近的区域中心
+        centers = np.array([epos[labels == c].mean(axis=0)
+                            for c in range(labels.max() + 1)])
+        drone_region = np.argmin(
+            np.linalg.norm(fpos[:, None, :] - centers[None, :, :], axis=2), axis=1)
+
+        same = drone_region[:, None] == labels[None, :]
+        prox = 1.0 - dist / dmax
+        bonus = np.where(same,
+                         (self.ZETA / 2.0) * values[None, :] * prox,
+                         (self.ETA / 2.0) * values[None, :])
+        return bonus
+
     # ------------------------------------------------------------------
-    def _repair(self, X, count, ctx):
-        """未满配额的目标：要么补齐，要么整批撤单。返回被撤下的机。"""
-        cap, dist = ctx["cap"], ctx["dist"]
-        count[:] = X.sum(axis=0)          # 与 X 对齐，避免计数漂移
-        freed = set()
+    def _assign(self, pool, cap, values, p_kill, bonus, n_f):
+        """槽展开 + 最大权二分匹配（= 原文"整数规划确定最优任务组合"）。"""
+        slots = []                       # (target, s)
+        for j, c in enumerate(cap):
+            for s in range(int(c)):
+                slots.append((j, s))
+        if not slots:
+            return np.zeros((n_f, len(cap)), dtype=int)
+        m = len(slots)
+        j_arr = np.array([s[0] for s in slots])
+        s_arr = np.array([s[1] for s in slots])
+
+        # 第 s 个槽的边际价值 = v_j·p_j·(1-p_j)^s
+        marg = values[j_arr] * p_kill[j_arr] * (1.0 - p_kill[j_arr]) ** s_arr
+        # 得分矩阵 (n_drones × n_slots)
+        score = marg[None, :] + bonus[:, j_arr]
+        # 候选池外的对置 -inf
+        ok = pool[:, j_arr]
+        score = np.where(ok, score, _NEG)
+
+        X = np.zeros((n_f, len(cap)), dtype=int)
+        if m == 0:
+            return X
+        # LSA 求最大权匹配（尽量多配对；不可行的对已被 -inf 排除）
+        r, c = linear_sum_assignment(-score)
+        for i, s in zip(r, c):
+            if score[i, s] > _NEG / 2:
+                X[i, j_arr[s]] = 1
+        return X
+
+    # ------------------------------------------------------------------
+    def _repair(self, X, cap, dist):
+        """整包裁决：未满配额的目标要么补齐、要么整批撤单（保证 C2）。"""
+        count = X.sum(axis=0)
         partial = [j for j in range(len(cap)) if 0 < count[j] < cap[j]]
         if not partial:
-            return freed
-        # 已用掉的机（含部分目标的机）
+            return X
         busy = set(np.nonzero(X.any(axis=1))[0].tolist())
         idle = [i for i in range(X.shape[0]) if i not in busy]
 
-        for j in sorted(partial, key=lambda x: -float(ctx["dist"][:, x].min())):
+        for j in sorted(partial):
             need = int(cap[j] - count[j])
             if len(idle) >= need:
-                # 补齐：取最近的空闲机
                 pick = sorted(idle, key=lambda i: float(dist[i, j]))[:need]
                 for i in pick:
                     X[i, j] = 1
-                    count[j] += 1
                     idle.remove(i)
             else:
-                # 撤单
                 for i in np.nonzero(X[:, j])[0]:
                     X[i, j] = 0
-                    count[j] -= 1
                     idle.append(int(i))
-                    freed.add(int(i))
-        return freed
-
-    # ------------------------------------------------------------------
-    def _release_lowest(self, X, count, ctx):
-        """撤掉边际收益最低的若干架，返回这些机的集合。"""
-        ii, jj = np.nonzero(X)
-        if len(ii) == 0:
-            return set()
-        gains = np.array([self._marginal(j, count, ctx["values"], ctx["p_kill"])
-                          for j in jj])
-        n_rel = max(1, int(len(ii) * self.RELEASE_FRAC))
-        freed = set()
-        for k in np.argsort(gains)[:n_rel]:
-            i, j = int(ii[k]), int(jj[k])
-            X[i, j] = 0
-            count[j] -= 1
-            freed.add(i)
-        return freed
-
-    # ------------------------------------------------------------------
-    def _objective(self, X, values, p_kill) -> float:
-        k = X.sum(axis=0)
-        return float(np.sum(values * (1.0 - (1.0 - p_kill) ** k)))
+        return X
