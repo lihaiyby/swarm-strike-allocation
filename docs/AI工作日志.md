@@ -1,4 +1,4 @@
-# AI 工作日志 · 及 GitHub 同步记录
+﻿# AI 工作日志 · 及 GitHub 同步记录
 
 > 用途：**每一次 AI 会话/改动**都必须在这里留一条记录，并同步登记是否已推送到 GitHub。
 > 配套规约：[AGENTS.md](../AGENTS.md)（四件套维护要求）。
@@ -29,7 +29,7 @@
 | 远端 | `https://github.com/lihaiyby/swarm-strike-allocation.git` |
 | 分支 | `main` |
 | 本地 HEAD | 见 `git log --oneline -1` |
-| 最近一次成功推送 | **2026-11-02 21:4x ✅** 远端 `61913ae`（A1 第二版：按原文重写） |
+| 最近一次成功推送 | **2026-11-02 22:0x ✅** 远端 `be4be68`（算法区分度诊断） |
 | 网络连通性 | **根因已查明（2026-10-23 21:00）**：本机开着系统代理 `127.0.0.1:7897`（Clash/Mihomo 一类），**Edge 走系统代理所以能上 GitHub；git 不读 Windows 的 Internet 设置**，`HTTP_PROXY`/`HTTPS_PROXY`/`git http.proxy` 三处皆空，于是 git 一直**直连**。直连时 TCP 握手能成（`Test-NetConnection github.com:443` → True，`20.205.243.166`），但 TLS 阶段被重置 → `Connection was reset`。<br>**经代理后完全正常**：`ls-remote` 秒回，`push` 成功。 |
 
 > **结论：不是网络不通，是 git 没走代理。** 以前记录的"GitHub 443 不可达"是误判，已更正。
@@ -42,7 +42,7 @@
 |---|---|
 | 待推送范围 | **无（队列已清空）** |
 | 查看命令 | `git log --oneline origin/main..HEAD` |
-| 当前远端位置 | `61913ae`；本地与远端一致 |
+| 当前远端位置 | `be4be68`；本地与远端一致 |
 | 阻塞原因 | ~~网络不可达~~ → 实为「未配置代理」+「沙箱禁止命名管道导致凭据助手失效」，见下 |
 | 补推命令 | `git -c http.proxy=http://127.0.0.1:7897 -c https.proxy=http://127.0.0.1:7897 -c http.sslBackend=openssl push origin main`（**须以完全权限执行**） |
 | 补推后要做 | ① 把本表改为 ✅ 并写明推送时间；② 更新上方"最近一次成功推送" |
@@ -78,8 +78,8 @@
 - **结构性原因**：单轮目标凹 → 可精确求解；精确解 = greedy 规则；我方同质且距离不影响毁伤 → "谁打谁"没有后果。
 - **新增决策 D6**：引入距离衰减毁伤 $p_{ij}=p_j e^{-\lambda d_{ij}/R}$，成本最低的破局方式。
 
-**提交**：`<本轮 commit>`
-**推送**：✅ 见同步状态
+**提交**：`be4be68`
+**推送**：✅ 2026-11-02 22:0x 已推送
 
 ---
 
