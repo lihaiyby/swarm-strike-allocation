@@ -39,16 +39,35 @@ import numpy as np
 import pandas as pd
 
 # 指标列 → (中文名, 是否越大越好)
+# 主得分项是 a_kill「歼灭价值」= Σ v_j·[P_j ≥ 阈值]（决策 D3，2026-11-02）。
+# 它与模型目标 a_gain = Σ v_j·P_j 不是同一个量：后者按概率加权、且计入幸存者的部分毁伤。
 METRICS = {
-    "a_gain": ("a 打击总收益", True),
+    "a_kill": ("a 歼灭价值", True),
     "b_threat": ("b 威胁消除率", True),
     "d_cost": ("d 效费比", True),
     "time_s": ("e 求解耗时", False),
 }
 
-# 默认权重：收益/教义侧 70%、效率侧 30%（D3 待拍板，此处仅为可运行默认值）
-DEFAULT_WEIGHTS = {"a_gain": 0.35, "b_threat": 0.35, "d_cost": 0.20, "time_s": 0.10}
+# 指标列 → 单字母代号（用于列名 r_a / sig_b 等）
+ALIAS = {"a_kill": "a", "b_threat": "b", "d_cost": "d", "time_s": "e"}
+
+# 默认权重（D3 拍板值）。运行时优先读 config/eval.yaml → weights；
+# 这里只是配置缺失或仍为 null 时的兜底。
+DEFAULT_WEIGHTS = {"a_kill": 0.60, "b_threat": 0.20, "d_cost": 0.15, "time_s": 0.05}
 EQUAL_WEIGHTS = {k: 0.25 for k in METRICS}
+
+
+def default_weights() -> dict:
+    """从 config/eval.yaml 读权重；缺项或全为 null 时回落到 DEFAULT_WEIGHTS。"""
+    try:
+        from ..config import load
+        cfg = (load("eval") or {}).get("weights") or {}
+        out = {k: float(v) for k, v in cfg.items() if v is not None}
+        if out and all(k in METRICS for k in out):
+            return out
+    except Exception:                      # 配置不可用时不应影响评分
+        pass
+    return dict(DEFAULT_WEIGHTS)
 
 # 时间计量模式
 TIME_MODES = {
@@ -82,7 +101,7 @@ def _pivot(df: pd.DataFrame) -> dict:
 
 
 def _normalize_weights(weights: dict | None) -> dict:
-    w = dict(DEFAULT_WEIGHTS if weights is None else weights)
+    w = dict(default_weights() if weights is None else weights)
     unknown = set(w) - set(METRICS)
     if unknown:
         raise ValueError(f"未知指标: {sorted(unknown)}；可选 {sorted(METRICS)}")
@@ -115,11 +134,12 @@ def _ratio_frames(piv: dict, baseline: str, time_mode: str,
     """返回 {algo: dict(指标列 → 逐场景比值 Series)}。"""
     base = piv[baseline]
     escore = _time_scores(piv, baseline, time_mode, limit_s)
+    ratio_metrics = [m for m in METRICS if m != "time_s"]
     out = {}
     for algo, cur in piv.items():
         common = base.index.intersection(cur.index)
         r = {c: cur.loc[common, c] / base.loc[common, c].clip(lower=_EPS)
-             for c in ("a_gain", "b_threat", "d_cost")}
+             for c in ratio_metrics}
         r["time_s"] = escore.loc[common, algo]
         out[algo] = r
     return out
@@ -244,14 +264,14 @@ def score_relative(df: pd.DataFrame, weights: dict | None = None,
             else:
                 vals[c] = _aggregate(r[c], agg)
         rows.append(dict(algo=algo,
-                         r_a=vals["a_gain"], r_b=vals["b_threat"],
+                         r_a=vals["a_kill"], r_b=vals["b_threat"],
                          r_d=vals["d_cost"], r_e=vals["time_s"],
                          score=sum(w[c] * vals[c] for c in w),
                          n_scene=len(common)))
     out = pd.DataFrame(rows).set_index("algo")
 
     if significance:
-        alias = {"a_gain": "a", "b_threat": "b", "d_cost": "d", "time_s": "e"}
+        alias = {m: ALIAS[m] for m in METRICS}
         for m, (_, hb) in METRICS.items():
             ps = _sig_vs_baseline(piv, baseline, m, hb)
             out[f"p_{alias[m]}"] = [ps[a] for a in out.index]
@@ -284,7 +304,7 @@ def score_risk_adjusted(df: pd.DataFrame, weights: dict | None = None,
     for algo, r in ratios.items():
         adj = {c: _aggregate(r[c], agg) - lam * float(r[c].std(ddof=1)) for c in METRICS}
         rows.append(dict(algo=algo,
-                         adj_a=adj["a_gain"], adj_b=adj["b_threat"],
+                         adj_a=adj["a_kill"], adj_b=adj["b_threat"],
                          adj_d=adj["d_cost"], adj_e=adj["time_s"],
                          score=sum(w[c] * adj[c] for c in w),
                          lam=lam, n_scene=len(r["time_s"])))
@@ -385,7 +405,7 @@ def score_pareto(df: pd.DataFrame, dims=("b_threat", "d_cost")) -> dict:
             plane[d] = means[d] if METRICS[d][1] else -means[d]
         return _pareto_front(plane)
 
-    planes = {("a_gain", "d_cost"): None, ("b_threat", "d_cost"): None,
+    planes = {("a_kill", "d_cost"): None, ("b_threat", "d_cost"): None,
               ("b_threat", "time_s"): None}
     pareto_by_plane = {f"{x} × {y}": _front((x, y)) for x, y in planes}
 
@@ -427,7 +447,7 @@ def format_report(df: pd.DataFrame, baseline: str = "greedy",
     add("=" * 78)
     add("总分接口 · 三套口径对比")
     add("=" * 78)
-    alias = {"a_gain": "a", "b_threat": "b", "d_cost": "d", "time_s": "e"}
+    alias = dict(ALIAS)
     wtxt = "  ".join(f"{alias[k]}={v:.2f}" for k, v in w.items())
     add(f"基线={baseline}   权重[{wtxt}]   时间模式={time_mode}(limit={time_limit_s}s)"
         f"   λ={lam}   agg={agg}")

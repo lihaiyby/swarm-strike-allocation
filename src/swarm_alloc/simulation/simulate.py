@@ -29,7 +29,8 @@ from .settle import battle_damage
 class BattleResult:
     seed: int
     algo: str
-    a_gain: float = 0.0
+    a_gain: float = 0.0            # 期望毁伤价值 Σ v_j·P_j（模型目标函数，逐目标按 P 加权）
+    a_kill: float = 0.0            # **歼灭价值** Σ v_j·[P_j ≥ 阈值]（按面值计，D3 主得分项）
     b_threat: float = 0.0          # 威胁消除率（真值团 + 价值加权，见 evaluation/b_metric.py）
     b_num: float = 0.0             # b 的分子：被全歼的真值团价值之和
     b_den: float = 0.0             # b 的分母：场景总价值（常数，与算法无关）
@@ -120,6 +121,7 @@ def simulate(scene, algo, model, scfg, etcfg, realloc_on_loss: bool = True) -> B
             for eid in list(engaged):
                 if P[eid] >= model.kill_threshold:
                     res.a_gain += v_of[eid] * P[eid]
+                    res.a_kill += v_of[eid]          # 歼灭价值：按面值计，不乘 P
                     res.n_destroyed += 1
                     del active[eid]
 

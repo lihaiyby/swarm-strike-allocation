@@ -14,17 +14,24 @@ from swarm_alloc.evaluation.score import (DEFAULT_WEIGHTS, score_pareto,  # noqa
 
 
 def _toy(n_scene=10, algos=("greedy", "b_bot", "c_mid")):
-    """造一份可控的长表：greedy 最好，c_mid 居中，b_bot 最差。"""
+    """造一份可控的长表：greedy 最好，c_mid 居中，b_bot 最差。
+
+    主得分项是 a_kill（歼灭价值，按面值计），同时保留 a_gain（期望毁伤价值）以贴近真实 CSV。
+    """
     rows = []
     for s in range(n_scene):
         base = 500 + s
-        rows.append(dict(algo="greedy", seed=1000 + s, a_gain=base, b_threat=0.99,
+        rows.append(dict(algo="greedy", seed=1000 + s, a_gain=base,
+                         a_kill=base * 1.05, b_threat=0.99,
                          d_cost=1.60, time_s=0.01))
-        rows.append(dict(algo="c_mid", seed=1000 + s, a_gain=base * 0.99, b_threat=0.90,
+        rows.append(dict(algo="c_mid", seed=1000 + s, a_gain=base * 0.99,
+                         a_kill=base * 1.04, b_threat=0.90,
                          d_cost=1.70, time_s=0.50))
-        rows.append(dict(algo="b_bot", seed=1000 + s, a_gain=base * 0.95, b_threat=0.70,
+        rows.append(dict(algo="b_bot", seed=1000 + s, a_gain=base * 0.95,
+                         a_kill=base * 0.99, b_threat=0.70,
                          d_cost=1.30, time_s=2.00))
-    return pd.DataFrame(rows)[["algo", "seed", "a_gain", "b_threat", "d_cost", "time_s"]]
+    return pd.DataFrame(rows)[["algo", "seed", "a_gain", "a_kill",
+                               "b_threat", "d_cost", "time_s"]]
 
 
 def test_baseline_scores_exactly_one():
@@ -57,7 +64,7 @@ def test_risk_adjustment_penalises_volatility():
 
 
 def test_weights_are_renormalised():
-    w = {"a_gain": 2.0, "b_threat": 2.0, "d_cost": 0.0, "time_s": 0.0}
+    w = {"a_kill": 2.0, "b_threat": 2.0, "d_cost": 0.0, "time_s": 0.0}
     out = score_relative(_toy(), weights=w)
     assert out.loc["greedy", "score"] == pytest.approx(1.0)   # 基准恒为 1
 
@@ -102,12 +109,31 @@ def test_runs_on_real_exp1_csv():
     if not csv.exists():
         pytest.skip("exp1_metrics.csv 不存在")
     df = pd.read_csv(csv)
+    if "a_kill" not in df.columns:
+        pytest.skip("exp1_metrics.csv 尚未重新生成（缺 a_kill 列）")
     a = score_relative(df)
     c = score_risk_adjusted(df)
     b = score_pareto(df)
     assert len(a) == df.algo.nunique() == len(c)
     assert abs(a.loc["greedy", "score"] - 1.0) < 1e-9
     assert set(b["pareto"]) <= set(df.algo.unique())
+
+
+def test_primary_metric_is_kill_value():
+    """D3：主得分项必须是 a_kill（歼灭价值），不是 a_gain。"""
+    from swarm_alloc.evaluation.score import ALIAS, METRICS
+    assert "a_kill" in METRICS
+    assert "a_gain" not in METRICS          # 模型目标不参与评分
+    assert ALIAS["a_kill"] == "a"
+
+
+def test_weights_loaded_from_config():
+    """权重应优先来自 config/eval.yaml，且 a_kill 占主导。"""
+    from swarm_alloc.evaluation.score import default_weights
+    w = default_weights()
+    assert sum(w.values()) == pytest.approx(1.0, abs=1e-9)
+    assert w["a_kill"] == max(w.values())
+    assert w["a_kill"] >= 0.5
 
 
 # ---------------------------------------------------------------- P3.7 可扩展性
@@ -162,5 +188,5 @@ def test_significance_columns_present():
 
 def test_pareto_reports_multiple_planes():
     b = score_pareto(_toy())
-    assert set(b["pareto_by_plane"]) == {"a_gain × d_cost", "b_threat × d_cost",
+    assert set(b["pareto_by_plane"]) == {"a_kill × d_cost", "b_threat × d_cost",
                                          "b_threat × time_s"}

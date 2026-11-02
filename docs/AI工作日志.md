@@ -1,4 +1,4 @@
-﻿# AI 工作日志 · 及 GitHub 同步记录
+# AI 工作日志 · 及 GitHub 同步记录
 
 > 用途：**每一次 AI 会话/改动**都必须在这里留一条记录，并同步登记是否已推送到 GitHub。
 > 配套规约：[AGENTS.md](../AGENTS.md)（四件套维护要求）。
@@ -52,6 +52,39 @@
 ---
 
 ## 日志
+
+### 2026-11-02 17:00 · P3.8 / D3：主得分项改为「歼灭价值」a_kill
+
+**任务**：D3 拍板 —— 评分以**敌方被歼灭无人机的价值**为主得分项；落地为 P3.8。
+
+**改动**
+| 文件 | 类型 | 说明 |
+|---|---|---|
+| `config/eval.yaml` | 修改 | 权重落地 `a_kill=0.60 / b_threat=0.20 / d_cost=0.15 / time_s=0.05` |
+| `src/swarm_alloc/simulation/simulate.py` | 修改 | 新增 `BattleResult.a_kill = Σ v_j·[P_j≥阈值]` |
+| `src/swarm_alloc/evaluation/oracle.py` | 修改 | 新增 `a_kill_opt`（0/1 背包，整包口径） |
+| `src/swarm_alloc/evaluation/score.py` | 修改 | `METRICS` 主项改 `a_kill`；新增 `default_weights()` 从配置读取 |
+| `experiments/exp1_main.py` | 修改 | 输出 `a_kill` / `a_kill_opt` / `gap_a_kill` |
+| `experiments/exp6_three_factor.py` | 修改 | 汇总与图改用 `a_kill` / `gap_a_kill` |
+| `tests/test_score.py` | 修改 | 造数补 `a_kill`；新增 3 项断言 |
+| `results/exp1*`、`results/three_factor` | 重新生成 | 三档 50 场景 |
+
+**符号变动**：新增 `a_kill`（BattleResult/CSV）、`a_kill_opt`（oracle）、`gap_a_kill`、`default_weights()`；`score.py` 的 `METRICS` 主项由 `a_gain` 改为 `a_kill`。
+
+**验证**
+- `pytest tests/ -q` → **84 passed, 1 skipped**
+- 三档全量重跑完成，`gap_a_kill` 可算
+
+**结论**
+- **`a_kill` 与 `a_gain` 必须分开**：easy 档 greedy 的 `a_gain`=589.71、`a_kill`=647.96。前者按概率加权并计入幸存者的部分毁伤；后者按面值、只算真正被歼灭的目标。
+- **主得分项更易饱和**：easy 档 greedy 达成率 99.91%（gap 0.09%），随机解 99.87% → 该档对主指标无区分力。
+- **冠军翻转点由 hard 提前到 normal**：normal 起 `ga_iap` 1.0027 > `greedy` 1.0000；hard 1.0683 > 1.0000。
+- **`a_kill × d` 帕累托前沿在 normal/hard 只剩 `ga_iap`**。
+
+**提交**：`<本轮 commit>`
+**推送**：✅ 见同步状态
+
+---
 
 ### 2026-11-02 16:30 · R5：建模与参数修订记录
 

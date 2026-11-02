@@ -44,12 +44,14 @@ def run_all(algo_names: list, n_scenes: int, tier: str | None = None) -> pd.Data
             r = simulate(s, algo, model, scfg, etcfg)
             ob = oracle[s.seed]
             rows.append(dict(algo=name, seed=s.seed, R=s.R, a_gain=r.a_gain,
+                             a_kill=r.a_kill,
                              b_threat=r.b_threat, d_cost=r.d_cost, time_s=r.time_s,
                              n_enemy=r.n_enemy, destroyed=r.n_destroyed,
                              leaked=r.n_leaked, lost=r.n_lost, used=r.n_used,
-                             a_opt=ob.a_opt, b_opt=ob.b_opt, d_opt=ob.d_opt,
-                             used_opt=ob.used,
+                             a_opt=ob.a_opt, a_kill_opt=ob.a_kill_opt,
+                             b_opt=ob.b_opt, d_opt=ob.d_opt, used_opt=ob.used,
                              gap_a=(ob.a_opt - r.a_gain) / ob.a_opt,
+                             gap_a_kill=(ob.a_kill_opt - r.a_kill) / ob.a_kill_opt,
                              gap_b=ob.b_opt - r.b_threat,
                              n_pool0=len(s.friendly), tier=(tier or "base")))
             details[(name, s.seed)] = r
@@ -139,9 +141,9 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     df.to_csv(out_dir / "exp1_metrics.csv", index=False)
 
-    summary = df.groupby("algo")[["a_gain", "b_threat", "d_cost", "time_s",
+    summary = df.groupby("algo")[["a_kill", "a_gain", "b_threat", "d_cost", "time_s",
                                   "destroyed", "leaked", "lost", "used",
-                                  "gap_a", "gap_b"]].agg(["mean", "std"])
+                                  "gap_a", "gap_a_kill", "gap_b"]].agg(["mean", "std"])
     summary.to_csv(out_dir / "exp1_summary.csv")
     print(summary.to_string(float_format=lambda x: f"{x:.3f}"))
 

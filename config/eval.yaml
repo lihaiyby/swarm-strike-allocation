@@ -4,13 +4,16 @@ quota:
   p_table: { "0.4": 5, "0.7": 2, "0.9": 1 }   # 达到 0.9 所需架数（校验用）
 time_limit_s: 1.0         # 单次分配求解耗时上限（超出进入惩罚函数）
 
-# 总评分权重【待定】：评审后填入，合计建议归一
+# 总评分权重（决策 D3，2026-11-02 拍板）
+# 主得分项 = a_kill「歼灭价值」= Σ v_j · [P_j ≥ kill_threshold]，即**敌方被击毁无人机的价值总和**。
+#   它与模型目标 a_gain = Σ v_j·P_j 不同：a_gain 按概率加权，被击毁的目标只计 0.9~1.0 倍价值；
+#   a_kill 按面值计，只统计真正被歼灭的目标，不计幸存者的部分毁伤。
+# 权重合计为 1；c（稳定性）不进入加权和，改由方案 C 的 mean−λ·std 承担。
 weights:
-  a_gain: null            # 打击总收益
-  b_threat: null          # 威胁消除率
-  c_stability: null       # 稳定性
-  d_cost: null            # 效费比
-  e_time: null            # 求解效率
+  a_kill: 0.60            # 主得分：敌方被歼灭的价值
+  b_threat: 0.20          # 威胁消除率（编队是否被全歼）
+  d_cost: 0.15            # 效费比
+  time_s: 0.05            # 求解效率
 
 penalty:
   over_force_per_unit: null   # 超兵力惩罚系数【待定】

@@ -37,6 +37,7 @@ NEG = -1e18
 @dataclass
 class OracleResult:
     a_opt: float = 0.0
+    a_kill_opt: float = 0.0                        # 歼灭价值的上界（0/1 背包：代价 m_j、价值 v_j）
     b_opt: float = 0.0
     used: int = 0
     budget: int = 0
@@ -140,6 +141,10 @@ def scene_upper_bound(scene, model) -> OracleResult:
 
     a_opt, counts = _knapsack_a(values, p_kill, quotas, budget)
 
+    # 歼灭价值的上界：把"打掉一个目标"看成整体，代价 = m_j，收益 = v_j（0/1 背包）。
+    # 注意 over-allocate 不会增加歼灭价值，所以必须用整包口径，不能用 a_opt 直接换算。
+    a_kill_opt, _ = _knapsack_b(values, quotas.astype(float), budget)
+
     # a 最优解隐含的 b（真值团口径）
     idx = {e: i for i, e in enumerate(eids)}
     P = {e: float(1.0 - (1.0 - p_kill[i]) ** counts[i]) for i, e in enumerate(eids)}
@@ -158,6 +163,7 @@ def scene_upper_bound(scene, model) -> OracleResult:
     b_opt = b_num_opt / b_total if b_total > 0 else 0.0
 
     return OracleResult(
-        a_opt=a_opt, b_opt=b_opt, used=int(counts.sum()), budget=int(budget),
+        a_opt=a_opt, a_kill_opt=a_kill_opt, b_opt=b_opt,
+        used=int(counts.sum()), budget=int(budget),
         counts={e: int(counts[i]) for i, e in enumerate(eids)},
         b_used=b_used, b_groups=chosen)

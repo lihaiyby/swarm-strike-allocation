@@ -40,7 +40,8 @@ TIER_DIRS = {"easy": "exp1", "normal": "exp1_normal", "hard": "exp1_hard"}
 OUT = ROOT / "results" / "three_factor"
 
 # 出图统一用英文标签（AI-HANDOFF 约定：避免 CJK 字体缺方块）
-SHORT = {"a_gain": "a", "b_threat": "b", "d_cost": "d", "time_s": "e"}
+SHORT = {"a_kill": "a", "a_gain": "a_gain", "b_threat": "b",
+         "d_cost": "d", "time_s": "e"}
 
 
 # --------------------------------------------------------------------------
@@ -66,12 +67,14 @@ def load_all(tiers) -> pd.DataFrame:
 
 def summarise(df: pd.DataFrame, tiers) -> pd.DataFrame:
     g = df.groupby(["tier", "algo"]).agg(
-        a=("a_gain", "mean"), b=("b_threat", "mean"), d=("d_cost", "mean"),
-        gap_a=("gap_a", "mean"), gap_b=("gap_b", "mean"),
+        a_kill=("a_kill", "mean"), a_gain=("a_gain", "mean"),
+        b=("b_threat", "mean"), d=("d_cost", "mean"),
+        gap_a_kill=("gap_a_kill", "mean"), gap_a=("gap_a", "mean"),
+        gap_b=("gap_b", "mean"),
         used=("used", "mean"), leaked=("leaked", "mean"),
         time=("time_s", "mean")).reset_index()
     g["tier"] = pd.Categorical(g["tier"], categories=tiers, ordered=True)
-    return g.sort_values(["tier", "a"], ascending=[True, False])
+    return g.sort_values(["tier", "a_kill"], ascending=[True, False])
 
 
 # --------------------------------------------------------------------------
@@ -178,9 +181,10 @@ def plot_bump(rank_mat: pd.DataFrame, tiers, out: Path):
 
 def plot_tier_metrics(summ: pd.DataFrame, tiers, out: Path):
     fig, axes = plt.subplots(1, 3, figsize=(14, 4.4))
-    for ax, col, title in [(axes[0], "a", "a: total expected value"),
+    for ax, col, title in [(axes[0], "a_kill", "a_kill: destroyed enemy value (primary)"),
                            (axes[1], "b", "b: threat elimination rate"),
-                           (axes[2], "gap_a", "gap_a: optimality gap (lower better)")]:
+                           (axes[2], "gap_a_kill",
+                            "gap_a_kill: optimality gap (lower better)")]:
         for algo, g in summ.groupby("algo"):
             ax.plot(range(len(tiers)), g[col].to_numpy(), "o-", label=algo)
         ax.set_xticks(range(len(tiers)))
@@ -224,9 +228,9 @@ def main():
     print("=" * 80)
     score_cols, rank_cols = {}, {}
     for tier in tiers:
-        sub = df[df.tier == tier][["algo", "seed", "a_gain", "b_threat",
+        sub = df[df.tier == tier][["algo", "seed", "a_kill", "b_threat",
                                    "d_cost", "time_s"]]
-        a = score_relative(sub, DEFAULT_WEIGHTS, "greedy", "threshold", 6.0)
+        a = score_relative(sub, None, "greedy", "threshold", 6.0)
         score_cols[tier] = a["score"]
         rank_cols[tier] = a["rank"]
         print(f"\n--- {tier} ---")
