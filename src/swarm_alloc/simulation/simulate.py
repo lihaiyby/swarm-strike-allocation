@@ -109,13 +109,27 @@ def simulate(scene, algo, model, scfg, etcfg, realloc_on_loss: bool = True) -> B
             fids = state.pool_ids
             ii, jj = np.nonzero(X)
             engaged = {}
-            for i, j in zip(ii, jj):
-                fid, eid = fids[i], eids[j]
-                del pool[fid]                     # 自杀式：下达指令即消耗
-                res.n_used += 1
-                cum[eid] += 1
-                engaged.setdefault(eid, active[eid])
-                P[eid] = model.damage(p_of[eid], cum[eid])
+            if model.range_decay_on:
+                # D6：逐对毁伤概率（相对距离口径），P_j = 1 - Π_i (1 - p_ij)^{x_ij}
+                dmat = np.linalg.norm(
+                    state.pool_matrix()[:, None, :]
+                    - np.vstack([active[e].pos for e in eids])[None, :, :], axis=2)
+                ppair = model.pair_p_matrix(np.array([p_of[e] for e in eids]), dmat)
+                for i, j in zip(ii, jj):
+                    fid, eid = fids[i], eids[j]
+                    del pool[fid]                     # 自杀式：下达指令即消耗
+                    res.n_used += 1
+                    cum[eid] += 1
+                    engaged.setdefault(eid, active[eid])
+                    P[eid] = 1.0 - (1.0 - P[eid]) * (1.0 - float(ppair[i, j]))
+            else:
+                for i, j in zip(ii, jj):
+                    fid, eid = fids[i], eids[j]
+                    del pool[fid]                     # 自杀式：下达指令即消耗
+                    res.n_used += 1
+                    cum[eid] += 1
+                    engaged.setdefault(eid, active[eid])
+                    P[eid] = model.damage(p_of[eid], cum[eid])
 
             # 4) 结算：期望值毁伤
             for eid in list(engaged):

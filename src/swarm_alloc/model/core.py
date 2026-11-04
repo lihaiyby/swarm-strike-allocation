@@ -8,6 +8,41 @@ class Model:
     def __init__(self, eval_cfg: dict):
         self.kill_threshold = eval_cfg["kill_threshold"]      # 0.9
         self.time_limit_s = eval_cfg["time_limit_s"]          # 1.0
+        # ---- D6：距离衰减的毁伤概率（默认关闭，关闭时行为与旧版逐位一致）
+        rd = eval_cfg.get("range_decay") or {}
+        self.range_decay_on = bool(rd.get("enabled", False))
+        self.range_lambda = float(rd.get("lambda", 2.0))
+        self.ref_range = float(rd.get("ref_range_m", 3000.0))
+
+    # ---- D6：距离衰减 ----
+    def pair_p(self, p, dist):
+        """单架次对单目标的实际毁伤概率（**绝对距离**口径，保留兼容用）。
+
+        ``p_ij = p_j · exp(-λ·d_ij/ref)``
+        注意：本项目交战距离约 3000~5000 m，绝对口径下衰减极易把 p 压到接近 0，
+        实际仿真请用 :meth:`pair_p_matrix`（相对口径）。
+        """
+        if not self.range_decay_on:
+            return p
+        return np.asarray(p) * np.exp(-self.range_lambda * np.asarray(dist) / self.ref_range)
+
+    def pair_p_matrix(self, p_kill, dmat: np.ndarray) -> np.ndarray:
+        """(我机 × 目标) 的实际毁伤概率矩阵，**相对距离**口径。
+
+        ``p_ij = p_j · exp(-λ · δ_ij)``，其中
+        ``δ_ij = (d_ij - d_j^min) / (d_j^max - d_j^min)`` ∈ [0, 1]
+
+        含义：**对每个目标，最近的那架机不受罚（p 保持原值），越远的机衰减越多。**
+        这样整体歼伤水平与旧口径可比，同时让"谁去打"第一次产生后果。
+        """
+        p = np.asarray(p_kill, dtype=float)[None, :]
+        if not self.range_decay_on:
+            return np.broadcast_to(p, dmat.shape).astype(float).copy()
+        dmin = dmat.min(axis=0, keepdims=True)
+        dmax = dmat.max(axis=0, keepdims=True)
+        span = np.maximum(dmax - dmin, 1.0)          # 防止除零（所有机几乎等距时）
+        delta = (dmat - dmin) / span
+        return p * np.exp(-self.range_lambda * delta)
 
     # ---- 毁伤与配额（文档 §2 §5） ----
     @staticmethod

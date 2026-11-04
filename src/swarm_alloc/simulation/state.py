@@ -31,3 +31,16 @@ class State:
 
     def pool_matrix(self) -> np.ndarray:
         return np.vstack([self.pool[i].pos for i in self.pool_ids])
+
+    # ---- D6 ----
+    def pair_p_matrix(self, model) -> np.ndarray:
+        """(我机 × 目标) 的实际单架次毁伤概率矩阵 ``p_ij``（相对距离口径）。
+
+        关闭距离衰减时退化为"每目标一个常数"的广播结果，与旧口径一致。
+        算法可用它来区分"近机"与"远机"——这是 D6 引入的唯一新信息。
+        """
+        _, p, epos = self.enemy_matrix()
+        fpos = self.pool_matrix()
+        d = np.linalg.norm(fpos[:, None, :] - epos[None, :, :], axis=2)
+        return model.pair_p_matrix(p, d)
+
