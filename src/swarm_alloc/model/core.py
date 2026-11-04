@@ -13,6 +13,8 @@ class Model:
         self.range_decay_on = bool(rd.get("enabled", False))
         self.range_lambda = float(rd.get("lambda", 2.0))
         self.ref_range = float(rd.get("ref_range_m", 3000.0))
+        # ---- D6b：硬射程（δ_ij 超过 hard_frac 的机**不可达**，p_ij = 0）
+        self.hard_frac = float(rd.get("hard_frac", 0.0))
 
     # ---- D6：距离衰减 ----
     def pair_p(self, p, dist):
@@ -33,7 +35,9 @@ class Model:
         ``δ_ij = (d_ij - d_j^min) / (d_j^max - d_j^min)`` ∈ [0, 1]
 
         含义：**对每个目标，最近的那架机不受罚（p 保持原值），越远的机衰减越多。**
-        这样整体歼伤水平与旧口径可比，同时让"谁去打"第一次产生后果。
+
+        D6b：若 ``hard_frac > 0``，则 ``δ_ij > hard_frac`` 的机**不可达**，``p_ij = 0``。
+        这一步把"配错机"从"打得少"升级为"打不到"——即可行性约束而非概率折扣。
         """
         p = np.asarray(p_kill, dtype=float)[None, :]
         if not self.range_decay_on:
@@ -42,7 +46,10 @@ class Model:
         dmax = dmat.max(axis=0, keepdims=True)
         span = np.maximum(dmax - dmin, 1.0)          # 防止除零（所有机几乎等距时）
         delta = (dmat - dmin) / span
-        return p * np.exp(-self.range_lambda * delta)
+        out = p * np.exp(-self.range_lambda * delta)
+        if self.hard_frac > 0:
+            out = np.where(delta > self.hard_frac, 0.0, out)
+        return out
 
     # ---- 毁伤与配额（文档 §2 §5） ----
     @staticmethod

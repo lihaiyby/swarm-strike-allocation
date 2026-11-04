@@ -27,5 +27,9 @@ monte_carlo: false        # 主评估用期望值口径；true 为掷骰子口�
 # 开启后"哪架机打哪个目标"第一次影响结果，用于打破"单轮分配可精确求解"造成的算法同质化。
 range_decay:
   enabled: false
-  lambda: 2.0             # 越大衰减越强；λ=2 时 3000 m 处约降为 e^-2 ≈ 0.135
-  ref_range_m: 3000.0     # 参考距离（取场景 R 的量级）
+  lambda: 2.0             # 越大衰减越强
+  ref_range_m: 3000.0     # 绝对口径的参考距离（仅在 pair_p 中使用，仿真走相对口径）
+  # D6b 硬射程：δ_ij > hard_frac 的机**不可达**（p_ij = 0）。
+  # 0 = 关闭；0.5 表示"只有距离在前一半的我机可达"。
+  # 与 lambda 配合使用：lambda 控制"打得多弱"，hard_frac 控制"能不能打"。
+  hard_frac: 0.0
