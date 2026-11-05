@@ -46,6 +46,8 @@ class BattleResult:
     a_net: float = 0.0             # 距离代价后收益 = a_gain − c·Σd
     c3_cross: int = 0              # 投影前跨群指派数（C3 违规）
     c2_dropped: int = 0            # C2 修复时整批撤单的目标数
+    n_wasted: int = 0              # 【B1-D】到达时目标已消失/战局已结束而失效的打击数
+    t_delay_wait: float = 0.0      # 【B1-D】所有打击的平均在途时间（秒）
     history: list = field(default_factory=list)     # 每触发点一行 dict
     snapshots: list = field(default_factory=list)   # 每触发点 (t, active_pos, X_lines, pool_pos)
 
@@ -73,6 +75,27 @@ def simulate(scene, algo, model, scfg, etcfg, realloc_on_loss: bool = True) -> B
     res = BattleResult(seed=scene.seed, algo=algo.name, n_enemy=scene.n_enemy)
     prev_t = 0.0
 
+    # 【批注 B1-D】在途打击队列：(到达时刻, 敌机 id, 单架次毁伤概率)
+    pending: list = []
+
+    def _resolve_due(t_now, active, P, res):
+        """结算所有在 t_now 之前（含）到达的打击；目标已消失则计为失效。"""
+        keep = []
+        for ta, eid, p in pending:
+            if ta > t_now + 1e-9:
+                keep.append((ta, eid, p))
+                continue
+            if eid in active:
+                P[eid] = 1.0 - (1.0 - P[eid]) * (1.0 - p)
+                if P[eid] >= model.kill_threshold:
+                    res.a_gain += v_of[eid] * P[eid]
+                    res.a_kill += v_of[eid]
+                    res.n_destroyed += 1
+                    del active[eid]
+            else:
+                res.n_wasted += 1
+        return keep
+
     triggers = [f * scene.T for f in scfg["waves"]["times_frac"]] + [scene.T]
     for ti, t in enumerate(triggers):
         # 1) 推进 + 突防
@@ -83,6 +106,10 @@ def simulate(scene, algo, model, scfg, etcfg, realloc_on_loss: bool = True) -> B
         for eid in [i for i, e in active.items() if np.linalg.norm(e.pos) <= defense_r]:
             res.n_leaked += 1
             del active[eid]
+
+        # 1.5) 【批注 B1-D】结算到期打击（在突防之后，确保"已突防"的目标上的打击记为失效）
+        if model.time_delay_on:
+            pending = _resolve_due(t, active, P, res)
 
         # 2) 新波次入场
         if ti < len(scene.waves):
@@ -126,6 +153,16 @@ def simulate(scene, algo, model, scfg, etcfg, realloc_on_loss: bool = True) -> B
                 res.c3_cross += int(st["cross"])
                 res.c2_dropped += int(st["dropped"])
 
+            # ---- 【批注 B1-D】已下达指令的目标不再重复派兵（在途架数 ≥ 配额即视为已饱和）
+            if model.time_delay_on and pending:
+                inflight = defaultdict(int)
+                for _, eid, _ in pending:
+                    inflight[eid] += 1
+                for j, eid in enumerate(eids):
+                    if inflight.get(eid, 0) >= int(
+                            model.quota(p_of[eid], model.kill_threshold)):
+                        X[:, j] = 0
+
             fids = state.pool_ids
             ii, jj = np.nonzero(X)
             engaged = {}
@@ -135,7 +172,27 @@ def simulate(scene, algo, model, scfg, etcfg, realloc_on_loss: bool = True) -> B
                     state.pool_matrix()[:, None, :]
                     - np.vstack([active[e].pos for e in eids])[None, :, :], axis=2)
                 res.sum_dist += float(dmat_all[ii, jj].sum())
-            if model.range_decay_on:
+            if model.time_delay_on:
+                # 【批注 B1-D】下达即消耗，但毁伤**延迟到到达时刻**结算
+                dmat = np.linalg.norm(
+                    state.pool_matrix()[:, None, :]
+                    - np.vstack([active[e].pos for e in eids])[None, :, :], axis=2)
+                if model.range_decay_on:
+                    ppair = model.pair_p_matrix(
+                        np.array([p_of[e] for e in eids]), dmat)
+                else:
+                    ppair = None
+                for i, j in zip(ii, jj):
+                    fid, eid = fids[i], eids[j]
+                    del pool[fid]
+                    res.n_used += 1
+                    engaged.setdefault(eid, active[eid])
+                    pij = (float(ppair[i, j]) if ppair is not None
+                           else float(p_of[eid]))
+                    ta = t + float(dmat[i, j]) / max(model.time_delay_speed, 1e-6)
+                    pending.append((ta, eid, pij))
+                    res.t_delay_wait += ta - t
+            elif model.range_decay_on:
                 # D6：逐对毁伤概率（相对距离口径），P_j = 1 - Π_i (1 - p_ij)^{x_ij}
                 dmat = np.linalg.norm(
                     state.pool_matrix()[:, None, :]
@@ -157,13 +214,14 @@ def simulate(scene, algo, model, scfg, etcfg, realloc_on_loss: bool = True) -> B
                     engaged.setdefault(eid, active[eid])
                     P[eid] = model.damage(p_of[eid], cum[eid])
 
-            # 4) 结算：期望值毁伤
-            for eid in list(engaged):
-                if P[eid] >= model.kill_threshold:
-                    res.a_gain += v_of[eid] * P[eid]
-                    res.a_kill += v_of[eid]          # 歼灭价值：按面值计，不乘 P
-                    res.n_destroyed += 1
-                    del active[eid]
+            # 4) 结算：期望值毁伤（时间延迟模式下本回合不结算，等到达时刻）
+            if not model.time_delay_on:
+                for eid in list(engaged):
+                    if P[eid] >= model.kill_threshold:
+                        res.a_gain += v_of[eid] * P[eid]
+                        res.a_kill += v_of[eid]      # 歼灭价值：按面值计，不乘 P
+                        res.n_destroyed += 1
+                        del active[eid]
 
             # 战损抽样 + 触发追加分配
             lost = battle_damage(rng, list(engaged.values()), pool, lethality)
@@ -186,6 +244,11 @@ def simulate(scene, algo, model, scfg, etcfg, realloc_on_loss: bool = True) -> B
         if not pool:
             break
         # 场上暂时无敌机但还有后续波次：继续等待下一触发点
+
+    # 【批注 B1-D】战局结束时仍在途的打击 → 失效
+    if model.time_delay_on and pending:
+        res.n_wasted += len(pending)
+        pending = []
 
     # 战局结束：场上剩余敌机按期望值计入部分收益
     for eid, e in active.items():

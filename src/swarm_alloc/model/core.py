@@ -25,6 +25,10 @@ class Model:
         dc = eval_cfg.get("distance_cost") or {}
         self.distance_cost_on = bool(dc.get("enabled", False))
         self.distance_cost_c = float(dc.get("c", 0.0))
+        # ---- 【批注 B1】形式 D：时间延迟（命中时刻 = 发射 + d/v）
+        td = eval_cfg.get("time_delay") or {}
+        self.time_delay_on = bool(td.get("enabled", False))
+        self.time_delay_speed = float(td.get("speed_mps", 300.0))
 
     # ---- D6：距离衰减 ----
     def pair_p(self, p, dist):
