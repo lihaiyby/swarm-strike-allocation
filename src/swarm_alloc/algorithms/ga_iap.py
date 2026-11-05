@@ -150,13 +150,14 @@ class GaIap(AlgoBase):
         eidx = {e: j for j, e in enumerate(eids)}
         rng = np.random.default_rng(eids[0] * 1000 + int(state.t))
 
-        # 可行性恢复（model 职责）：威胁度排序纳入，配额需求受资源池约束
+        # 可行性恢复（model 职责）：按 select_priority 排序纳入，配额需求受资源池约束
         quotas = np.array([model.quota(p, model.kill_threshold) for p in p_kill])
-        demand = {}
+        demand, gvalue = {}, {}
         for g in state.groups:
             js = [eidx[uid] for uid in g.member_ids if uid in eidx]
             demand[g.id] = int(quotas[js].sum()) if js else 0
-        kept = model.select_groups(state.groups, demand, m)
+            gvalue[g.id] = float(values[js].sum()) if js else 0.0
+        kept = model.select_groups(state.groups, demand, m, gvalue)
         allow = np.zeros(n, dtype=bool)
         for g in kept:
             for uid in g.member_ids:
@@ -221,16 +222,18 @@ class GaIap(AlgoBase):
         _, f1, f2 = evaluate(pop)
         best = pop[int(np.argmin(f1 + 1e-6 * f2))]                     # 主目标优先，同分取省兵
 
-        # ---- 解码：架数 → 离目标最近的可用无人机（我方同质，C3 由就近满足） ----
+        # ---- 解码：架数 → 离目标最近的可用无人机（我方同质；【批注 B3】受 C3 限制）
         fpos = state.pool_matrix()
         avail = np.ones(m, dtype=bool)
+        c3 = state.c3_allowed()
         for j in np.argsort(-values):
             k = int(best[j])
             if k <= 0 or not avail.any():
                 continue
             d = np.linalg.norm(fpos - epos[j], axis=1)
-            d[~avail] = np.inf
-            idx = np.argsort(d)[: min(k, int(avail.sum()))]
+            d[~avail | ~c3[:, j]] = np.inf
+            idx = np.argsort(d)[: min(k, int((d < np.inf).sum()))]
+            idx = idx[np.isfinite(d[idx])]
             X[idx, j] = 1
             avail[idx] = False
         return X

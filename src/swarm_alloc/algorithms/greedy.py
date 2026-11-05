@@ -28,17 +28,19 @@ class Greedy(AlgoBase):
         quotas = np.array([model.quota(p, model.kill_threshold) for p in p_kill])
         group_of_enemy = {uid: g.id for g in state.groups for uid in g.member_ids}
 
-        # 各群配额需求（只统计仍在空的敌机）
-        demand = {}
+        # 各群配额需求与群价值（只统计仍在空的敌机）
+        demand, gvalue = {}, {}
         for g in state.groups:
             js = [eidx[uid] for uid in g.member_ids if uid in eidx]
             demand[g.id] = int(quotas[js].sum()) if js else 0
+            gvalue[g.id] = float(values[js].sum()) if js else 0.0
 
-        kept = model.select_groups(state.groups, demand, len(fids))
+        kept = model.select_groups(state.groups, demand, len(fids), gvalue)
 
-        # 编组划分：按威胁度顺序，依次取离群质心最近的 demand_k 架
+        # 编组划分：按优先级顺序，依次取离群质心最近的 demand_k 架
         fpos = state.pool_matrix()
         available = np.ones(len(fids), dtype=bool)
+        c3 = state.c3_allowed()          # 【批注 B3】组对组：False 的机不能打该目标
         for g in kept:
             js = [eidx[uid] for uid in g.member_ids if uid in eidx]
             if not js:
@@ -46,7 +48,12 @@ class Greedy(AlgoBase):
             centroid = epos[js].mean(axis=0)
             d = np.linalg.norm(fpos - centroid, axis=1)
             d[~available] = np.inf
-            take = min(demand[g.id], int(available.sum()))
+            # 只保留"至少能打本群某一目标"的机
+            ok = c3[:, js].any(axis=1)
+            d[~ok] = np.inf
+            take = min(demand[g.id], int((d < np.inf).sum()))
+            if take <= 0:
+                continue
             members = np.argsort(d)[:take]
             available[members] = False
 

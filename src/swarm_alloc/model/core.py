@@ -15,6 +15,16 @@ class Model:
         self.ref_range = float(rd.get("ref_range_m", 3000.0))
         # ---- D6b：硬射程（δ_ij 超过 hard_frac 的机**不可达**，p_ij = 0）
         self.hard_frac = float(rd.get("hard_frac", 0.0))
+        # ---- 【批注 B4】资源不足时的优先顺序：value（Long 版）/ threat（旧口径）
+        self.select_priority = str(eval_cfg.get("select_priority", "value"))
+        # ---- 【批注 B3】我方分组 + 组对组对抗
+        gp = eval_cfg.get("grouping") or {}
+        self.grouping_on = bool(gp.get("enabled", False))
+        self.grouping_mode = str(gp.get("mode", "even"))
+        # ---- 【批注 B1】形式 C：距离代价项
+        dc = eval_cfg.get("distance_cost") or {}
+        self.distance_cost_on = bool(dc.get("enabled", False))
+        self.distance_cost_c = float(dc.get("c", 0.0))
 
     # ---- D6：距离衰减 ----
     def pair_p(self, p, dist):
@@ -94,16 +104,32 @@ class Model:
                 errs.append(f"C5 冻结机被分配: {fid}")
         return errs
 
-    # ---- 可行性恢复（文档 §6）：按威胁度纳入，放弃低威胁群 ----
-    @staticmethod
-    def select_groups(groups: list, demand: dict, pool_size: int) -> list:
-        """groups: list[Group]（threat 已填）；demand: {group_id: 配额需求}。
-        返回被保留的群（按威胁度从高到低）。"""
+    # ---- 可行性恢复（文档 §6）：资源不足时放弃低优先级群 ----
+    def select_groups(self, groups: list, demand: dict, pool_size: int,
+                      values: dict | None = None) -> list:
+        """groups: list[Group]（threat 已填）；demand: {group_id: 配额需求}；
+        values: {group_id: 群价值}（可选）。
+
+        【批注 B4】优先顺序按 `config/eval.yaml → select_priority` 决定：
+        - ``value``（默认，按 `方案04-Long-修改.docx`"优先分配给高价值敌方机组"）
+        - ``threat``（旧口径，按熵权 TOPSIS 威胁度）
+
+        返回被保留的群，按优先级从高到低。
+        注意：**高价值 ≠ 高威胁**——威胁度还含速度与距离，两者排序可能不同。
+        """
+        def _val(g):
+            return float(values.get(g.id, 0.0)) if values else 0.0
+
+        if self.select_priority == "threat":
+            key = lambda g: (-float(g.threat), -_val(g))
+        else:
+            key = lambda g: (-_val(g), -float(g.threat))
+
         kept, used = [], 0
-        for g in sorted(groups, key=lambda g: -g.threat):
+        for g in sorted(groups, key=key):
             d = demand.get(g.id, 0)
             if used + d > pool_size:
-                continue                      # 跳过该群，继续看更低威胁但更小的群
+                continue                      # 跳过该群，继续看优先级更低但更小的群
             kept.append(g)
             used += d
         return kept

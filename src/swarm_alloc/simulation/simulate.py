@@ -41,6 +41,11 @@ class BattleResult:
     n_leaked: int = 0
     n_lost: int = 0
     n_used: int = 0
+    # ---- 【批注 B1/B3】诊断字段
+    sum_dist: float = 0.0          # 累计 Σ d_ij·x_ij（米）；用于距离代价项
+    a_net: float = 0.0             # 距离代价后收益 = a_gain − c·Σd
+    c3_cross: int = 0              # 投影前跨群指派数（C3 违规）
+    c2_dropped: int = 0            # C2 修复时整批撤单的目标数
     history: list = field(default_factory=list)     # 每触发点一行 dict
     snapshots: list = field(default_factory=list)   # 每触发点 (t, active_pos, X_lines, pool_pos)
 
@@ -102,13 +107,34 @@ def simulate(scene, algo, model, scfg, etcfg, realloc_on_loss: bool = True) -> B
 
             state = State(t=t, enemies=dict(active), groups=groups,
                           pool=dict(pool), frozen_ids=[])
+            # ---- 【批注 B3】先在 solve 之前建好分组，让算法能按组规划
+            if model.grouping_on:
+                from ..model.grouping import build_friendly_groups
+                fid2g, g2e, _ = build_friendly_groups(state, model)
+                state.friendly_groups = fid2g
+                state.group_match = {k: v for k, v in g2e.items() if v is not None}
+
             t0 = time.perf_counter()
             X = algo.solve(state, model)
             res.time_s += time.perf_counter() - t0
 
+            # ---- 【批注 B3】组对组对抗：把仍跨群的指派投影掉，并修复 C2
+            if model.grouping_on:
+                from ..model.grouping import project_c3
+                X, st = project_c3(X, state, model, state.friendly_groups,
+                                   state.group_match)
+                res.c3_cross += int(st["cross"])
+                res.c2_dropped += int(st["dropped"])
+
             fids = state.pool_ids
             ii, jj = np.nonzero(X)
             engaged = {}
+            # ---- 【批注 B1】累计航程（距离代价项用；与 distance_cost 开关无关，始终统计）
+            if len(ii):
+                dmat_all = np.linalg.norm(
+                    state.pool_matrix()[:, None, :]
+                    - np.vstack([active[e].pos for e in eids])[None, :, :], axis=2)
+                res.sum_dist += float(dmat_all[ii, jj].sum())
             if model.range_decay_on:
                 # D6：逐对毁伤概率（相对距离口径），P_j = 1 - Π_i (1 - p_ij)^{x_ij}
                 dmat = np.linalg.norm(
@@ -172,4 +198,7 @@ def simulate(scene, algo, model, scfg, etcfg, realloc_on_loss: bool = True) -> B
         P, scene.ground_truth_groups(), all_values, model.kill_threshold)
     res.b_threat, res.b_num, res.b_den = b, num, den
     res.d_cost = res.a_gain / max(res.n_used, 1)
+    # 【批注 B1】形式 C：距离代价后的净收益
+    res.a_net = res.a_gain - (model.distance_cost_c * res.sum_dist
+                              if model.distance_cost_on else 0.0)
     return res

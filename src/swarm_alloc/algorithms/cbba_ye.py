@@ -99,9 +99,10 @@ class CBBAYe(AlgoBase):
         gmembers = {g.id: [eidx[u] for u in g.member_ids if u in eidx]
                     for g in state.groups}
 
-        # 可行性恢复（与其它算法同口径）
+        # 可行性恢复（与其它算法同口径）：按 select_priority，默认群价值
         demand = {g: int(quotas[ms].sum()) for g, ms in gmembers.items() if ms}
-        kept = model.select_groups(state.groups, demand, len(fids))
+        gvalue_in = {g: float(values[ms].sum()) for g, ms in gmembers.items() if ms}
+        kept = model.select_groups(state.groups, demand, len(fids), gvalue_in)
         allowed = {u for g in kept for u in g.member_ids}
         cap = np.array([int(quotas[j]) if eids[j] in allowed else 0
                         for j in range(len(eids))], dtype=int)
@@ -113,6 +114,7 @@ class CBBAYe(AlgoBase):
 
         # ---------------- 阶段2 双向任务包构建 → 候选池 ----------------
         pool = self._build_candidate_pool(dist, cap, len(fids))
+        pool &= state.c3_allowed()        # 【批注 B3】组对组：跨群候选直接排除
 
         # ---------------- 阶段3 基于类别的奖励 ----------------
         bonus = self._category_reward(epos, values, fpos, dist, dmax, dmax)
@@ -121,7 +123,7 @@ class CBBAYe(AlgoBase):
         X = self._assign(pool, cap, values, p_kill, bonus, len(fids))
 
         # ---------------- 整包裁决（保证 C2） ----------------
-        X = self._repair(X, cap, dist)
+        X = self._repair(X, cap, dist, c3=state.c3_allowed())
         return X
 
     # ------------------------------------------------------------------
@@ -203,8 +205,11 @@ class CBBAYe(AlgoBase):
         return X
 
     # ------------------------------------------------------------------
-    def _repair(self, X, cap, dist):
-        """整包裁决：未满配额的目标要么补齐、要么整批撤单（保证 C2）。"""
+    def _repair(self, X, cap, dist, c3=None):
+        """整包裁决：未满配额的目标要么补齐、要么整批撤单（保证 C2）。
+
+        【批注 B3】``c3`` 为 (我机 × 目标) 允许矩阵；补齐时只能用允许的机。
+        """
         count = X.sum(axis=0)
         partial = [j for j in range(len(cap)) if 0 < count[j] < cap[j]]
         if not partial:
@@ -214,8 +219,9 @@ class CBBAYe(AlgoBase):
 
         for j in sorted(partial):
             need = int(cap[j] - count[j])
-            if len(idle) >= need:
-                pick = sorted(idle, key=lambda i: float(dist[i, j]))[:need]
+            cand = idle if c3 is None else [i for i in idle if c3[i, j]]
+            if len(cand) >= need:
+                pick = sorted(cand, key=lambda i: float(dist[i, j]))[:need]
                 for i in pick:
                     X[i, j] = 1
                     idle.remove(i)
