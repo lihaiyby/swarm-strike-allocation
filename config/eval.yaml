@@ -1,4 +1,4 @@
-# 统一评估参数
+﻿# 统一评估参数
 kill_threshold: 0.9       # 歼灭判定：累积毁伤概率 ≥ 0.9 视为歼灭
 quota:
   p_table: { "0.4": 5, "0.7": 2, "0.9": 1 }   # 达到 0.9 所需架数（校验用）
@@ -54,7 +54,7 @@ monte_carlo: false        # 主评估用期望值口径；true 为掷骰子口�
 # enabled: false 时与旧版**逐位一致**（p_ij 退化为 p_j）。
 # 开启后"哪架机打哪个目标"第一次影响结果，用于打破"单轮分配可精确求解"造成的算法同质化。
 range_decay:
-  enabled: false
+  enabled: true
   lambda: 2.0             # 越大衰减越强
   ref_range_m: 3000.0     # 绝对口径的参考距离（仅在 pair_p 中使用，仿真走相对口径）
   # D6b 硬射程：δ_ij > hard_frac 的机**不可达**（p_ij = 0）。

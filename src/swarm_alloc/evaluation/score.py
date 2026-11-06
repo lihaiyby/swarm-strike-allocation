@@ -89,6 +89,11 @@ AGG_MODES = {
 }
 
 _EPS = 1e-12
+# 逐场景比值的上下限。动机（2026-11-06）：开启距离衰减后，基准算法在某些场景可能得分≈0，
+# 此时 r = 本算法/基准 会放大到 1e11 量级，把整张表淹没。这里做硬截断，
+# 语义是"最多算 100 倍差距 / 最少算 1% 差距"，只影响极端场景，不影响正常区间。
+_RATIO_CAP = 100.0
+_RATIO_FLOOR = 0.01
 
 
 # --------------------------------------------------------------------------
@@ -138,7 +143,8 @@ def _ratio_frames(piv: dict, baseline: str, time_mode: str,
     out = {}
     for algo, cur in piv.items():
         common = base.index.intersection(cur.index)
-        r = {c: cur.loc[common, c] / base.loc[common, c].clip(lower=_EPS)
+        r = {c: (cur.loc[common, c] / base.loc[common, c].clip(lower=_EPS))
+             .clip(lower=_RATIO_FLOOR, upper=_RATIO_CAP)   # 防止基准≈0 时比值爆炸
              for c in ratio_metrics}
         r["time_s"] = escore.loc[common, algo]
         out[algo] = r

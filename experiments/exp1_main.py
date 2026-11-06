@@ -130,6 +130,8 @@ def main():
     ap.add_argument("--detail-seed", type=int, default=1000)
     ap.add_argument("--tier", default=None,
                     help="编制档位（config/scenario.yaml → tiers）；缺省为默认档 scenes.pkl")
+    ap.add_argument("--out", default=None,
+                    help="输出目录（相对 results/）；缺省按档位自动 exp1 / exp1_<tier>")
     args = ap.parse_args()
     algo_names = args.algos or available()
 
@@ -137,7 +139,7 @@ def main():
     scfg = load("scenario")
     from swarm_alloc.scenario.generator import scene_file
     tier_dir = "exp1" if args.tier in (None, scfg.get("tier_default")) else f"exp1_{args.tier}"
-    out_dir = ROOT / "results" / tier_dir
+    out_dir = ROOT / "results" / (args.out or tier_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     df.to_csv(out_dir / "exp1_metrics.csv", index=False)
 
