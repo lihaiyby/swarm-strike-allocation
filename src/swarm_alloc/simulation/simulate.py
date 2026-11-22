@@ -53,6 +53,11 @@ class BattleResult:
     a_net: float = 0.0             # 距离代价后收益 = a_gain − c·Σd
     c3_cross: int = 0              # 投影前跨群指派数（C3 违规）
     c2_dropped: int = 0            # C2 修复时整批撤单的目标数
+    n_inflight_lost: int = 0       # 【V2-P2】在途被敌机防御火力击落
+    n_strike_void: int = 0         # 【V2-P2】到达时目标已毁/已突防而失效的打击数
+    n_strike_hit: int = 0          # 【V2-P2】成功命中（施加毁伤）的打击数
+    n_strike_late: int = 0         # 【V2-P2】到达时刻晚于战局结束、未出击的打击数
+    n_decisions: int = 0           # 【V2-P2】本场决策次数（事件驱动）
     n_wasted: int = 0              # 【B1-D】到达时目标已消失/战局已结束而失效的打击数
     t_delay_wait: float = 0.0      # 【B1-D】所有打击的平均在途时间（秒）
     history: list = field(default_factory=list)     # 每触发点一行 dict
