@@ -47,6 +47,36 @@ def _clone(u):
     return v
 
 
+def _intercept_time(p0, e0, ev, v: float) -> float:
+    """直线迎头拦截所需时间（秒）。
+
+    敌我**同时在飞**：我方从 ``p0`` 以速度 ``v`` 直线飞向拦截点，敌机从 ``e0``
+    以恒速矢量 ``ev`` 继续飞。令两者在 $t$ 时刻相遇：
+
+        |D + E·t| = v·t,  D = e0 − p0, E = ev
+      → (|E|² − v²)·t² + 2(D·E)·t + |D|² = 0
+
+    取最小的正根。若 $v \\le |E|$ 且敌机在远离，可能无正根，返回 ``inf``。
+
+    这与"把目标当成静止、用 d/v 估时"的差别很大：敌人朝我方飞来时，
+    相对接近速度是 $v+|E|$，时间约减半。
+    """
+    D = np.asarray(e0, dtype=float) - np.asarray(p0, dtype=float)
+    E = np.asarray(ev, dtype=float)
+    a = float(E @ E) - v * v
+    b = 2.0 * float(D @ E)
+    c = float(D @ D)
+    if abs(a) < 1e-9:
+        return -c / b if abs(b) > 1e-12 else float("inf")
+    disc = b * b - 4.0 * a * c
+    if disc < 0:
+        return float("inf")
+    root = np.sqrt(disc)
+    cands = [(-b - root) / (2 * a), (-b + root) / (2 * a)]
+    pos = [t for t in cands if t > 1e-9 and np.isfinite(t)]
+    return float(min(pos)) if pos else float("inf")
+
+
 def _defense_fire_prob(lethality: dict, etype: str) -> float:
     """敌机的防御火力：在途我机被击落的概率。
 
@@ -228,18 +258,21 @@ def simulate_timed(scene, algo, model, scfg, etcfg, fcfg=None,
                  if model.range_decay_on else None)
         for i, j in zip(iis, jjs):
             fid, eid = fids[i], eids[j]
-            fu = pool.pop(fid, None)
-            if fu is None:
+            if fid not in pool:
                 continue
+            v = max(cruise.get(fid, 60.0), 1e-6)
+            # 【修正 1】敌我同时在飞 → 按直线迎头拦截解相遇时间（不再把目标当静止）
+            t_int = _intercept_time(fpos[i], epos[j], active[eid].vel, v)
+            ta = now + t_climb + t_int
+            # 【规则】明知来不及（到达晚于战局结束）→ 不派，不消耗兵力
+            if not np.isfinite(t_int) or ta > T + _EPS_T:
+                res.n_strike_late += 1
+                continue
+            pool.pop(fid, None)
             res.n_used += 1
             res.sum_dist += float(dmat[i, j])
             pij = float(ppair[i, j]) if ppair is not None else float(p_of[eid])
-            v = max(cruise.get(fid, 60.0), 1e-6)
-            ta = now + t_climb + float(dmat[i, j]) / v
-            if ta <= T + _EPS_T:
-                inflight.append((ta, fid, eid, pij))
-            else:
-                res.n_strike_late += 1
+            inflight.append((ta, fid, eid, pij))
             # 超过战局时长的打击视为"来不及"，机已消耗但无战果
         res.t_delay_wait += 0.0
 
