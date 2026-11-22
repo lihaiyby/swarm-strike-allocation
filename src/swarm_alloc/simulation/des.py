@@ -92,7 +92,8 @@ def _defense_fire_prob(lethality: dict, etype: str) -> float:
 
 def simulate_timed(scene, algo, model, scfg, etcfg, fcfg=None,
                    realloc: dict | None = None, seed_offset: int = 0,
-                   t_scale: float = 1.0) -> BattleResult:
+                   t_scale: float = 1.0, end_mode: str = "engagement",
+                   t_cap_scale: float = 5.0) -> BattleResult:
     """时序仿真主函数。
 
     参数
@@ -264,8 +265,18 @@ def simulate_timed(scene, algo, model, scfg, etcfg, fcfg=None,
             # 【修正 1】敌我同时在飞 → 按直线迎头拦截解相遇时间（不再把目标当静止）
             t_int = _intercept_time(fpos[i], epos[j], active[eid].vel, v)
             ta = now + t_climb + t_int
-            # 【规则】明知来不及（到达晚于战局结束）→ 不派，不消耗兵力
-            if not np.isfinite(t_int) or ta > T + _EPS_T:
+            # 【规则】可行性判定：拦截必须发生在**敌机越过防线之前**
+            #   （end_mode="engagement" 的主判据；不再用全局 T 当硬截止）
+            if not np.isfinite(t_int):
+                res.n_strike_late += 1
+                continue
+            r_e = float(np.linalg.norm(epos[j]))
+            u_e = float(np.linalg.norm(active[eid].vel)) or 1e-9
+            t_to_def = max((r_e - defense_r), 0.0) / u_e
+            if t_climb + t_int > t_to_def + _EPS_T:
+                res.n_strike_late += 1          # 赶在敌机突防之前拦不住
+                continue
+            if end_mode == "fixed_t" and ta > T + _EPS_T:
                 res.n_strike_late += 1
                 continue
             pool.pop(fid, None)
@@ -273,7 +284,6 @@ def simulate_timed(scene, algo, model, scfg, etcfg, fcfg=None,
             res.sum_dist += float(dmat[i, j])
             pij = float(ppair[i, j]) if ppair is not None else float(p_of[eid])
             inflight.append((ta, fid, eid, pij))
-            # 超过战局时长的打击视为"来不及"，机已消耗但无战果
         res.t_delay_wait += 0.0
 
     # ---------------- 主循环 ----------------
@@ -288,23 +298,32 @@ def simulate_timed(scene, algo, model, scfg, etcfg, fcfg=None,
         if _should_decide(t):
             _decide(t)
 
-        if t >= T - _EPS_T:
-            break
+        if end_mode == "fixed_t":
+            if t >= T - _EPS_T:
+                break
+            hard_end = T
+        else:
+            # engagement：战局在"敌机全部了结（被歼灭或突防）且无在途打击"时结束
+            if not active and not inflight:
+                break
+            hard_end = T * float(t_cap_scale)
+            if t >= hard_end - _EPS_T:
+                break
 
         # 2) 找下一个事件时刻（严格大于当前时刻）
-        nxt = T
+        nxt = hard_end
         if n_wave_done < len(wave_times):
             nxt = min(nxt, wave_times[n_wave_done])
         if inflight:
             nxt = min(nxt, min(x[0] for x in inflight))
-        if nxt <= t + _EPS_T:                    # 同一时刻已处理完，直接走到 T
-            nxt = T
+        if nxt <= t + _EPS_T:                    # 同一时刻已处理完，直接走到收尾时刻
+            nxt = hard_end
         _advance(nxt - t)
         t = nxt
 
-    # 战局结束
-    _resolve(T + 1.0)                        # 结算恰好在 T 到达的打击
-    res.n_wasted = sum(1 for (ta, _, _, _) in inflight if ta > T)
+    # 战局结束：结算所有仍需结算的在途打击（覆盖"时间到了但飞机还在飞"的情形）
+    _resolve(t + 1e9)
+    res.n_wasted = sum(1 for (ta, _, _, _) in inflight if ta > t)
     for eid, e in active.items():
         res.a_gain += v_of[eid] * P[eid]
 
