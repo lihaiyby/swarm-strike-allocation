@@ -152,12 +152,40 @@ def simulate_timed(scene, algo, model, scfg, etcfg, fcfg=None,
             type_of[u.id] = getattr(u, "type_name", "")
 
     def _advance(dt: float):
+        """推进敌机；判定是否在本区间内越过防线。
+
+        不能用"推进后 |pos| ≤ R"来判突防——**大步长时敌机会穿过球心跑到另一侧**，
+        此时 |pos| 又会变大，导致漏判（实测会让 70 架敌机凭空消失）。
+        改为**射线与球面求交**：沿速度方向解 $|p+vt|=R$，若交点时刻落在
+        $(0, dt]$ 内即判突防。
+        """
         nonlocal lost_since_decision
-        for e in active.values():
-            e.pos = e.pos + e.vel * dt
-        for eid in [i for i, e in active.items() if np.linalg.norm(e.pos) <= defense_r]:
-            res.n_leaked += 1
-            del active[eid]
+        if dt <= 0:
+            return
+        for eid in list(active.keys()):
+            e = active[eid]
+            p = e.pos
+            v = e.vel
+            if float(p @ p) <= defense_r * defense_r:
+                res.n_leaked += 1
+                del active[eid]
+                continue
+            a = float(v @ v)
+            if a < 1e-12:
+                continue
+            b = 2.0 * float(p @ v)
+            c = float(p @ p) - defense_r * defense_r
+            disc = b * b - 4.0 * a * c
+            if disc < 0:
+                e.pos = p + v * dt
+                continue
+            root = np.sqrt(disc)
+            t_hit = (-b - root) / (2.0 * a)
+            if 0.0 < t_hit <= dt + _EPS_T:
+                res.n_leaked += 1
+                del active[eid]
+            else:
+                e.pos = p + v * dt
 
     def _resolve(now: float):
         """结算所有到达时刻 ≤ now 的打击。"""
