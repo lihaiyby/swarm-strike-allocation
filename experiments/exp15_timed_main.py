@@ -99,7 +99,7 @@ def main():
     # 综合分（方案 A，基线 greedy）
     try:
         from swarm_alloc.evaluation.score import score_relative
-        sc = score_relative(df, baseline="greedy")
+        sc = score_relative(df, baseline="greedy", time_limit_s=1.0)
         print("\n" + "=" * 110)
         print("[2] 综合分（方案 A，基线 greedy = 1.000；e 用单次平均耗时，时限 1 s）")
         print("=" * 110)
