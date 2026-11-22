@@ -89,6 +89,11 @@ AGG_MODES = {
 }
 
 _EPS = 1e-12
+# 【V2-P0-1】实时性口径（老师建议 2026-11-17：按"每次输入态势→输出分配矩阵"的平均耗时）。
+#   per_call_mean —— 用逐场景的 `time_mean_ms`（单次平均）作为 e，**新数据默认**
+#   battle_total  —— 用 `time_s`（整场累计），仅用于复算旧结果
+#   auto          —— 有 `time_mean_ms` 列就用单次平均，否则退回整场累计
+TIME_BASES = {"auto", "per_call_mean", "battle_total"}
 # 逐场景比值的上下限。动机（2026-11-06）：开启距离衰减后，基准算法在某些场景可能得分≈0，
 # 此时 r = 本算法/基准 会放大到 1e11 量级，把整张表淹没。这里做硬截断，
 # 语义是"最多算 100 倍差距 / 最少算 1% 差距"，只影响极端场景，不影响正常区间。
@@ -100,9 +105,25 @@ _RATIO_FLOOR = 0.01
 # 工具
 # --------------------------------------------------------------------------
 
-def _pivot(df: pd.DataFrame) -> dict:
-    """长表 → {algorithm: DataFrame(index=seed)}。"""
-    return {a: g.set_index("seed").sort_index() for a, g in df.groupby("algo")}
+def _pivot(df: pd.DataFrame, time_basis: str = "auto") -> dict:
+    """长表 → {algorithm: DataFrame(index=seed)}。
+
+    ``time_basis`` 决定 e 用哪一列（见 ``TIME_BASES``）：选 ``per_call_mean`` 时，
+    用逐场景的 ``time_mean_ms / 1000`` **覆盖** ``time_s``，使下游"秒 + 1 秒时限"
+    的判定逻辑无需改动，语义即为"单次平均求解耗时"。
+    """
+    if time_basis not in TIME_BASES:
+        raise ValueError(f"未知 time_basis: {time_basis!r}；可选 {sorted(TIME_BASES)}")
+    out = {}
+    for a, g in df.groupby("algo"):
+        g = g.set_index("seed").sort_index()
+        use_mean = time_basis == "per_call_mean" or (
+            time_basis == "auto" and "time_mean_ms" in g.columns)
+        if use_mean and "time_mean_ms" in g.columns:
+            g = g.copy()
+            g["time_s"] = pd.to_numeric(g["time_mean_ms"], errors="coerce") / 1000.0
+        out[a] = g
+    return out
 
 
 def _normalize_weights(weights: dict | None) -> dict:
@@ -229,7 +250,7 @@ def nemenyi_cd(k: int, n_scenes: int) -> float:
 def score_relative(df: pd.DataFrame, weights: dict | None = None,
                    baseline: str = "greedy", time_mode: str = "threshold",
                    time_limit_s: float = 6.0, agg: str = "mean",
-                   significance: bool = True) -> pd.DataFrame:
+                   significance: bool = True, time_basis: str = "auto") -> pd.DataFrame:
     """方案 A —— 以基线算法为 1.000 的相对分。
 
     逐场景先算 `r_i(s) = 指标_i(算法) / 指标_i(基线)`（e 按 `time_mode` 处理），
@@ -249,7 +270,7 @@ def score_relative(df: pd.DataFrame, weights: dict | None = None,
     if agg not in AGG_MODES:
         raise ValueError(f"未知 agg: {agg!r}；可选 {sorted(AGG_MODES)}")
     w = _normalize_weights(weights)
-    piv = _pivot(df)
+    piv = _pivot(df, time_basis)
     if baseline not in piv:
         raise ValueError(f"基线算法 {baseline!r} 不在数据中；可选 {sorted(piv)}")
     ratios = _ratio_frames(piv, baseline, time_mode, time_limit_s)
@@ -294,7 +315,8 @@ def score_relative(df: pd.DataFrame, weights: dict | None = None,
 def score_risk_adjusted(df: pd.DataFrame, weights: dict | None = None,
                         baseline: str = "greedy", lam: float = 1.0,
                         time_mode: str = "threshold",
-                        time_limit_s: float = 6.0, agg: str = "mean") -> pd.DataFrame:
+                        time_limit_s: float = 6.0, agg: str = "mean",
+                        time_basis: str = "auto") -> pd.DataFrame:
     """方案 C —— 方案 A 的逐场景比值再做 `mean − λ·std`。
 
     指标 c（稳定性）由此自然进入总分：波动大的算法被扣分，λ 控制惩罚强度。
@@ -303,7 +325,7 @@ def score_risk_adjusted(df: pd.DataFrame, weights: dict | None = None,
     if agg not in AGG_MODES:
         raise ValueError(f"未知 agg: {agg!r}；可选 {sorted(AGG_MODES)}")
     w = _normalize_weights(weights)
-    piv = _pivot(df)
+    piv = _pivot(df, time_basis)
     ratios = _ratio_frames(piv, baseline, time_mode, time_limit_s)
 
     rows = []
@@ -339,14 +361,15 @@ def _pareto_front(points: pd.DataFrame) -> list:
     return sorted(front)
 
 
-def significance_test(df: pd.DataFrame, metric: str, higher_better: bool = True) -> dict:
+def significance_test(df: pd.DataFrame, metric: str, higher_better: bool = True,
+                      time_basis: str = "auto") -> dict:
     """单指标的两两显著性检验 + 平均秩 + Nemenyi 临界差异。
 
     k ≥ 3 用 Friedman；k = 2 时 Friedman 退化，自动改用 Wilcoxon 符号秩检验。
     """
     from scipy.stats import friedmanchisquare, wilcoxon
 
-    piv = _pivot(df)
+    piv = _pivot(df, time_basis)
     algos = sorted(piv)
     seeds = None
     for a in algos:
@@ -389,7 +412,8 @@ def significance_test(df: pd.DataFrame, metric: str, higher_better: bool = True)
                 k=k, N=N, significant_pairs=pairs)
 
 
-def score_pareto(df: pd.DataFrame, dims=("b_threat", "d_cost")) -> dict:
+def score_pareto(df: pd.DataFrame, dims=("b_threat", "d_cost"),
+                 time_basis: str = "auto") -> dict:
     """方案 B —— 不给单一总分，只给可比较的结构化证据。
 
     包含五件东西：
@@ -400,7 +424,7 @@ def score_pareto(df: pd.DataFrame, dims=("b_threat", "d_cost")) -> dict:
     4. `win_matrix`：逐场景两两胜负次数（四指标合计）；
     5. `stats`：每个指标的显著性检验 + 平均秩 + Nemenyi CD。
     """
-    piv = _pivot(df)
+    piv = _pivot(df, time_basis)
     means = pd.DataFrame({a: piv[a][list(METRICS)].mean() for a in piv}).T[list(METRICS)]
 
     def _front(axes):

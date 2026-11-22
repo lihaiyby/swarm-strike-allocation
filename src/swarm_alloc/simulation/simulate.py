@@ -35,7 +35,14 @@ class BattleResult:
     b_num: float = 0.0             # b 的分子：被全歼的真值团价值之和
     b_den: float = 0.0             # b 的分母：场景总价值（常数，与算法无关）
     d_cost: float = 0.0
-    time_s: float = 0.0
+    time_s: float = 0.0            # 【v1 兼容】整场所有 solve 调用的**累计**耗时（秒）
+    # ---- 【V2-P0-1】实时性口径（老师建议 A）：单次"输入态势→输出分配矩阵"的耗时
+    time_list: list = field(default_factory=list)   # 每次 solve 的耗时（秒）
+    time_n: int = 0                # 本场 solve 调用次数
+    time_mean: float = 0.0         # 单次平均耗时（秒）—— 实时性主指标
+    time_p50: float = 0.0          # 单次中位数
+    time_p95: float = 0.0          # 单次 95 分位
+    time_max: float = 0.0          # 单次最大
     n_enemy: int = 0
     n_destroyed: int = 0
     n_leaked: int = 0
@@ -50,6 +57,23 @@ class BattleResult:
     t_delay_wait: float = 0.0      # 【B1-D】所有打击的平均在途时间（秒）
     history: list = field(default_factory=list)     # 每触发点一行 dict
     snapshots: list = field(default_factory=list)   # 每触发点 (t, active_pos, X_lines, pool_pos)
+
+
+def _summarize_time(res) -> None:
+    """【V2-P0-1】把每次 solve 的耗时汇总成实时性指标。
+
+    老师建议（2026-11-17）：实时性 = **每次"输入态势 → 输出分配矩阵"所用时间的平均值**，
+    强制 ≤ 1 秒。因此主指标是 ``time_mean``（单次平均），而不是整场累计 ``time_s``。
+    """
+    ts = sorted(res.time_list)
+    res.time_n = len(ts)
+    if not ts:
+        return
+    res.time_mean = sum(ts) / len(ts)
+    res.time_max = ts[-1]
+    res.time_p50 = ts[len(ts) // 2] if len(ts) % 2 else 0.5 * (ts[len(ts) // 2 - 1] + ts[len(ts) // 2])
+    idx = min(len(ts) - 1, int(round(0.95 * (len(ts) - 1))))
+    res.time_p95 = ts[idx]
 
 
 def _clone(u):
@@ -143,7 +167,9 @@ def simulate(scene, algo, model, scfg, etcfg, realloc_on_loss: bool = True) -> B
 
             t0 = time.perf_counter()
             X = algo.solve(state, model)
-            res.time_s += time.perf_counter() - t0
+            _dt = time.perf_counter() - t0
+            res.time_s += _dt
+            res.time_list.append(_dt)
 
             # ---- 【批注 B3】组对组对抗：把仍跨群的指派投影掉，并修复 C2
             if model.grouping_on:
@@ -264,4 +290,5 @@ def simulate(scene, algo, model, scfg, etcfg, realloc_on_loss: bool = True) -> B
     # 【批注 B1】形式 C：距离代价后的净收益
     res.a_net = res.a_gain - (model.distance_cost_c * res.sum_dist
                               if model.distance_cost_on else 0.0)
+    _summarize_time(res)
     return res

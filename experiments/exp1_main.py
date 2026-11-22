@@ -46,6 +46,10 @@ def run_all(algo_names: list, n_scenes: int, tier: str | None = None) -> pd.Data
             rows.append(dict(algo=name, seed=s.seed, R=s.R, a_gain=r.a_gain,
                              a_kill=r.a_kill,
                              b_threat=r.b_threat, d_cost=r.d_cost, time_s=r.time_s,
+                             # 【V2-P0-1】单次求解耗时（老师建议 A：实时性按"每次输入态势→输出矩阵"的平均耗时）
+                             time_n=r.time_n, time_mean_ms=r.time_mean * 1000.0,
+                             time_p50_ms=r.time_p50 * 1000.0, time_p95_ms=r.time_p95 * 1000.0,
+                             time_max_ms=r.time_max * 1000.0,
                              n_enemy=r.n_enemy, destroyed=r.n_destroyed,
                              leaked=r.n_leaked, lost=r.n_lost, used=r.n_used,
                              a_opt=ob.a_opt, a_kill_opt=ob.a_kill_opt,

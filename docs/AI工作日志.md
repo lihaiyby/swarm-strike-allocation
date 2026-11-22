@@ -1,4 +1,4 @@
-﻿# AI 工作日志 · 及 GitHub 同步记录
+# AI 工作日志 · 及 GitHub 同步记录
 
 > 用途：**每一次 AI 会话/改动**都必须在这里留一条记录，并同步登记是否已推送到 GitHub。
 > 配套规约：[AGENTS.md](../AGENTS.md)（四件套维护要求）。
@@ -52,6 +52,42 @@
 ---
 
 ## 日志
+
+### 2026-11-22 12:40 · V2 立项：实时性口径 + 算法分类 + 时间可行性反算
+
+**任务**：落实 2026-11-17 老师建议中"不必等回复就能做"的部分（V2-P0-1 / P0-2 / P0-4）。
+
+**改动**
+
+| 文件 | 类型 | 说明 |
+|---|---|---|
+| `src/swarm_alloc/simulation/simulate.py` | 修改 | `BattleResult` 增 `time_list/time_n/time_mean/time_p50/time_p95/time_max`；新增 `_summarize_time()`；每次 `solve` 记录耗时 |
+| `src/swarm_alloc/evaluation/score.py` | 修改 | 新增 `TIME_BASES` 与 `time_basis` 参数；`_pivot` 支持用 `time_mean_ms/1000` 覆盖 `time_s`；`significance_test` 同步 |
+| `config/eval.yaml` | 修改 | `time_limit_s` 注释改为"单次求解平均耗时上限" |
+| `experiments/exp1_main.py` | 修改 | 指标表新增 `time_n/time_mean_ms/time_p50_ms/time_p95_ms/time_max_ms` |
+| `scripts/time_feasibility.py` | 新增 | 时间可行性反算（飞行时间 vs 突防剩余） |
+| `results/feasibility/README.md` + `.csv` | 新增 | 反算结果与结论 |
+| `docs/擂台改造-任务清单.md` | 修改 | 新增 §11 Track V2（任务表 + 算法分类表） |
+| `docs/擂台改造-进度记录.md` | 修改 | 追加本次条目 |
+| `docs/变量及参数及符号大全.md` | 修改 | 补 `BattleResult` 时间字段、`TIME_BASES`、`score_relative` 新参数、csv 新列 |
+
+**验证**
+
+- `pytest tests/ -q` → **85 passed**
+- normal 档 3 场景：`ga_iap` 单次平均 755~793 ms、`ga_dual` 644~1189 ms（**seed 1001 超 1 秒**）、其余算法 < 17 ms
+- 旧表用 `time_basis="auto"` 复算 → 与旧结果逐位一致（向后兼容）
+- `scripts/time_feasibility.py --tiers normal hard --scenes 20`：30 m/s 可拦截 0%、60 m/s 90.7%、100 m/s 100%
+
+**结论**
+
+1. 按老师"单次平均 ≤ 1 秒"的硬线，**`ga_dual` 会在部分场景超线**，`ga_iap` 合格——两个遗传算法只有一个能进榜；
+2. **现有 30 m/s 的速度下界在新方案下完全不可行**（引入飞行时间后可拦截比例 0%）；60 m/s 是临界值（90.7%）；
+3. **升空速度必须明确**：20 m/s 时 90.7%，5 m/s 时降到 54.4%——4.5 秒差 36 个百分点。
+
+**提交**：待填
+**推送**：待填
+
+---
 
 ### 2026-11-04 21:40 · R3 完成：复现01 docx 回写
 
