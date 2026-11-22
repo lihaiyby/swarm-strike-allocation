@@ -83,8 +83,10 @@ def _clone(u):
     return v
 
 
-def simulate(scene, algo, model, scfg, etcfg, realloc_on_loss: bool = True) -> BattleResult:
-    rng = np.random.default_rng(scene.seed)
+def simulate(scene, algo, model, scfg, etcfg, realloc_on_loss: bool = True,
+             seed_offset: int = 0) -> BattleResult:
+    # seed_offset：蒙特卡洛重复实验时换随机流（不换场景），用于统计平均
+    rng = np.random.default_rng(scene.seed + int(seed_offset))
     tracker = GroupTracker(scfg["perception"]["eps_m"], scfg["perception"]["min_samples"])
     lethality = {t["name"]: t["lethality"] for t in etcfg["types"] if t.get("lethality")}
     defense_r = scfg["battlefield"]["defense_radius_m"]
@@ -93,6 +95,7 @@ def simulate(scene, algo, model, scfg, etcfg, realloc_on_loss: bool = True) -> B
     active = {}                                   # enemy_id -> EnemyUnit（副本，位置随时间推进）
     cum = defaultdict(int)                        # enemy_id -> 累计被分配架数
     P = defaultdict(float)                        # enemy_id -> 当前累积毁伤
+    hit = defaultdict(bool)                       # 【V2-P3】蒙特卡洛：是否已被某架次"击毁"
     p_of = {}                                     # enemy_id -> p_kill
     v_of = {}                                     # enemy_id -> value
 
@@ -230,7 +233,13 @@ def simulate(scene, algo, model, scfg, etcfg, realloc_on_loss: bool = True) -> B
                     res.n_used += 1
                     cum[eid] += 1
                     engaged.setdefault(eid, active[eid])
-                    P[eid] = 1.0 - (1.0 - P[eid]) * (1.0 - float(ppair[i, j]))
+                    if model.kill_rule == "monte_carlo":
+                        # 【V2-P3】逐架次抽样：以 p_ij 概率"击毁"，任一成功即摧毁
+                        if rng.random() < float(ppair[i, j]):
+                            hit[eid] = True
+                        P[eid] = 1.0 if hit[eid] else 0.0
+                    else:
+                        P[eid] = 1.0 - (1.0 - P[eid]) * (1.0 - float(ppair[i, j]))
             else:
                 for i, j in zip(ii, jj):
                     fid, eid = fids[i], eids[j]
@@ -238,7 +247,12 @@ def simulate(scene, algo, model, scfg, etcfg, realloc_on_loss: bool = True) -> B
                     res.n_used += 1
                     cum[eid] += 1
                     engaged.setdefault(eid, active[eid])
-                    P[eid] = model.damage(p_of[eid], cum[eid])
+                    if model.kill_rule == "monte_carlo":
+                        if rng.random() < float(p_of[eid]):
+                            hit[eid] = True
+                        P[eid] = 1.0 if hit[eid] else 0.0
+                    else:
+                        P[eid] = model.damage(p_of[eid], cum[eid])
 
             # 4) 结算：期望值毁伤（时间延迟模式下本回合不结算，等到达时刻）
             if not model.time_delay_on:

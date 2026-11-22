@@ -1,8 +1,30 @@
 # 我方无人机参数
 # 注：【批注 B4】要求不一致处以 方案04-Long-修改.docx 为准，故 speed_mps 由 50-60 改为 30-60。
-count_ratio: 3            # 总数 = 3n（数量充足）
-speed_mps: [30, 60]       # 【批注 B4】Long 版：30-60 m/s（原 v3 为 50-60）
+# 【V2-P1】老师决策 2026-11-22：① 巡航速度 **70 m/s 为最大值**；② 部署改"环形发射平台 + 垂直升空"。
+count_ratio: 3            # 总数 = 3n（数量充足）；V2 另有 ample 档（见待做步骤）
+# 巡航速度区间（m/s）。老师只给了上限 70；下界从 30 提到 60 的依据：
+#   scripts/time_feasibility.py 反算显示，在 60 s 级战局下 <60 m/s 的可拦截比例为 0%
+#   （30 m/s → 0.0%、50 m/s → 0.0%、60 m/s → 90.7%、70 m/s → 100%）。
+#   若老师坚持包线 [30, 70]，改回 [30, 70] 即可，但会有约 3/4 的机"飞不到"。
+speed_mps: [60, 70]
 unit_value: 1             # 单机价值（与敌方统一价值标准）
 max_range_m: R            # 最大航程 = 战场半径
 suicide: true             # 自杀式：单次打击后退出；已下达指令即冻结
-deploy: uniform_inner     # 初始位置：内球面（防线 700m）均匀随机
+
+# 初始部署方式：
+#   uniform_inner —— v1：防线内球面均匀随机（不动、无升空）
+#   ring_platform —— V2：地面圆形投影上的环形发射平台，起飞后垂直升空 climb_height_m
+deploy: ring_platform
+
+# 【V2-P1】发射平台与升空（老师决策 2026-11-22：环形均匀 + 升空 20 m/s）
+launch:
+  layout: ring            # ring（已定） / grid / random（备用）
+  rings: 2                # 同心环数
+  ring_inner_frac: 0.35   # 内环半径 = 0.35 × 防线半径（700 m）≈ 245 m
+  ring_outer_frac: 0.85   # 外环半径 = 0.85 × 700 ≈ 595 m
+  drones_per_platform: 4  # 每平台可发射 4 架
+  n_platforms: null       # null = 自动 = ceil(我方总数 / drones_per_platform)
+  angle_offset_rad: 0.0   # 首个平台的方位角偏移
+  angle_jitter_rad: 0.0   # 平台方位抖动（0 = 严格均布）
+  climb_height_m: 30.0    # 垂直升空高度（老师指定 30 m）
+  climb_speed_mps: 20.0   # 垂直升空速度 → 升空耗时 1.5 s

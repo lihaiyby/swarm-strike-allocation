@@ -29,6 +29,10 @@ class Model:
         td = eval_cfg.get("time_delay") or {}
         self.time_delay_on = bool(td.get("enabled", False))
         self.time_delay_speed = float(td.get("speed_mps", 300.0))
+        # ---- 【V2-P3】摧毁判定规则（老师决策 2026-11-22：先用蒙特卡洛抽样）
+        #   expected      —— 期望值口径：P_j = 1 - Π(1-p_ij)，≥阈值即摧毁（v1 默认）
+        #   monte_carlo   —— 每架次以 p_ij 独立抽样"是否击毁"，任一成功即摧毁
+        self.kill_rule = str(eval_cfg.get("kill_rule", "expected"))
 
     # ---- D6：距离衰减 ----
     def pair_p(self, p, dist):

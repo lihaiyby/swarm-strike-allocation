@@ -76,10 +76,16 @@ def test_knapsack_b_matches_brute_force():
 
 @pytest.mark.parametrize("idx", [0, 12, 33, 49])
 def test_a_opt_dominates_actual_algorithms(idx):
-    """上界性质：任何算法的 a 都不得超过 a_opt。"""
+    """上界性质：任何算法的 a 都不得超过 a_opt。
+
+    注意：该性质只对**期望值口径**成立。``kill_rule=monte_carlo`` 时 a_kill 是
+    "抽样实现值"（击毁记整份价值），可能因幸运抽样超过按名义概率算出的上界，
+    因此这里显式固定为 ``expected``（V2-P3 引入 kill_rule 后补充说明）。
+    """
     s = SCENES[idx]
     ob = scene_upper_bound(s, model)
-    r_g = simulate(s, get("greedy"), model, scfg, etcfg)
+    m_expected = Model({**load("eval"), "kill_rule": "expected"})
+    r_g = simulate(s, get("greedy"), m_expected, scfg, etcfg)
     assert r_g.a_gain <= ob.a_opt + 1e-6
     assert ob.a_opt > 0
 

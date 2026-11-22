@@ -63,13 +63,22 @@ def gen_scene(seed: int, idx: int, scfg: dict, type_cfgs: list, fcfg: dict,
         wave, next_id = gen_wave(rng, frac * T, nw, R, scfg, type_cfgs, next_id)
         waves.append(wave)
 
-    # 我方：内球面均匀部署，总数 = ratio × n（ratio 缺省取 count_ratio）
+    # 我方部署：V2 起支持"环形发射平台 + 垂直升空"；缺省仍为内球面均匀（v1 兼容）
     defense_r = scfg["battlefield"]["defense_radius_m"]
     if ratio is None:
         n_friendly = int(fcfg["count_ratio"]) * n
     else:
         n_friendly = max(1, int(round(float(ratio) * n)))
-    fpos = sample_hemisphere(rng, defense_r, n_friendly)
+
+    deploy_mode = str(fcfg.get("deploy", "uniform_inner"))
+    if deploy_mode == "ring_platform":
+        from .launch import deploy_ring_platform
+        dep = deploy_ring_platform(rng, defense_r, n_friendly,
+                                   fcfg.get("launch") or {})
+        fpos = dep["pos"]
+    else:
+        fpos = sample_hemisphere(rng, defense_r, n_friendly)
+
     fspeeds = rng.uniform(*fcfg["speed_mps"], size=n_friendly)
     friendly = [FriendlyUnit(id=i, pos=fpos[i], speed=float(fspeeds[i]))
                 for i in range(n_friendly)]
