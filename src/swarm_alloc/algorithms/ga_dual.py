@@ -58,7 +58,7 @@ class GADual(AlgoBase):
 
         def fitness(pop):
             """收益 − 距离代价（用"每目标取最近 k 架"的距离近似）。"""
-            P = 1.0 - (1.0 - ctx.p_kill) ** pop
+            P = 1.0 - (1.0 - ctx.p0) * (1.0 - ctx.p_kill) ** pop   # 【V2-P2-3】含在途起点
             gain = (ctx.values[None, :] * P).sum(axis=1)
             order = np.argsort(ctx.dn, axis=0)            # (n_f, n_e)
             cost = np.zeros(len(pop))

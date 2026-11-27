@@ -69,6 +69,10 @@ class PCISA(AlgoBase):
         allowed = {u for g in kept for u in g.member_ids}
         cap = np.array([int(quotas[j]) if eids[j] in allowed else 0
                         for j in range(len(eids))], dtype=int)
+        # 【V2-P2-3】在途可见
+        p0 = state.effective_p0()
+        cap = np.minimum(cap, state.remaining_quota(
+            model, lambda e: state.enemies[e].p_kill))
         if cap.sum() == 0:
             return X
 
@@ -83,8 +87,8 @@ class PCISA(AlgoBase):
             cand = (~used)[:, None] & (count[None, :] < cap[None, :]) & c3
             if not cand.any():
                 break
-            gain = values * ((1 - (1 - p_kill) ** (count + 1))
-                             - (1 - (1 - p_kill) ** count))
+            gain = values * ((1 - (1 - p0) * (1 - p_kill) ** (count + 1))
+                             - (1 - (1 - p0) * (1 - p_kill) ** count))
             gain = np.where(count < cap, gain, -np.inf)
             dm = np.where(cand, dn, np.inf)
             bi = np.argmin(dm, axis=0)
@@ -100,26 +104,26 @@ class PCISA(AlgoBase):
             count[j] += 1
 
         # ---------- 阶段 2：改进模拟退火 ----------
-        X = self._anneal(X, count, cap, values, p_kill, dn, c3)
+        X = self._anneal(X, count, cap, values, p_kill, dn, c3, p0)
 
         # ---------- 整包裁决（C2） ----------
         X = self._repair(X, cap, dist, c3)
         return X
 
     # ------------------------------------------------------------------
-    def _cost(self, X, count, cap, values, p_kill, dn):
+    def _cost(self, X, count, cap, values, p_kill, dn, p0):
         """联盟代价 = 负收益 + 距离代价 + 未满配额惩罚。"""
-        P = 1.0 - (1.0 - p_kill) ** count
+        P = 1.0 - (1.0 - p0) * (1.0 - p_kill) ** count
         gain = float(np.dot(values, P))
         distc = float((dn * X).sum())
         partial = ((count > 0) & (count < cap))
         pen = self.PENALTY * float(cap[partial].sum())
         return -gain + self.LAMBDA_COST * distc + pen
 
-    def _anneal(self, X, count, cap, values, p_kill, dn, c3):
+    def _anneal(self, X, count, cap, values, p_kill, dn, c3, p0):
         n_f, n_e = X.shape
         rng = np.random.default_rng(int(values.sum() * 1000) % (2 ** 32))
-        cur = self._cost(X, count, cap, values, p_kill, dn)
+        cur = self._cost(X, count, cap, values, p_kill, dn, p0)
         best_X, best_cost = X.copy(), cur
         T = self.T0
         stall = 0
@@ -143,7 +147,7 @@ class PCISA(AlgoBase):
             count[j0] -= 1
             X[i, j1] = 1
             count[j1] += 1
-            new = self._cost(X, count, cap, values, p_kill, dn)
+            new = self._cost(X, count, cap, values, p_kill, dn, p0)
             d = new - cur
             if d <= 0 or rng.random() < np.exp(-d / max(T, 1e-9)):
                 cur = new

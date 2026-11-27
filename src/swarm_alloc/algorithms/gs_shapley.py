@@ -60,6 +60,10 @@ class GSShapley(AlgoBase):
         allowed = {u for g in kept for u in g.member_ids}
         cap = np.array([int(quotas[j]) if eids[j] in allowed else 0
                         for j in range(len(eids))], dtype=int)
+        # 【V2-P2-3】在途可见
+        p0 = state.effective_p0()
+        cap = np.minimum(cap, state.remaining_quota(
+            model, lambda e: state.enemies[e].p_kill))
         if cap.sum() == 0:
             return X
 
@@ -69,7 +73,7 @@ class GSShapley(AlgoBase):
         c3 = state.c3_allowed() & (dn <= self.DELTA_MAX)   # 任务区域筛选
 
         # ---------- 偏好：单机对目标首架次的边际效用 ----------
-        base_gain = values * p_kill                         # k=0 时的边际收益
+        base_gain = values * p_kill * (1.0 - p0)            # k=0 时的边际收益（含在途起点）
         pref = base_gain[None, :] - self.LAMBDA_COST * dn   # (n_f, n_e)
         pref = np.where(c3 & (cap[None, :] > 0), pref, -np.inf)
 
@@ -77,7 +81,7 @@ class GSShapley(AlgoBase):
         X = self._gale_shapley(pref, cap, values, p_kill, c3)
 
         # ---------- Shapley 近似：移除低边际贡献者，再二次分配 ----------
-        X = self._shapley_prune(X, cap, values, p_kill, dn, c3)
+        X = self._shapley_prune(X, cap, values, p_kill, dn, c3, p0)
 
         # ---------- 整包裁决（C2） ----------
         X = self._repair(X, cap, dist, c3)
@@ -134,7 +138,7 @@ class GSShapley(AlgoBase):
         return X
 
     # ------------------------------------------------------------------
-    def _shapley_prune(self, X, cap, values, p_kill, dn, c3):
+    def _shapley_prune(self, X, cap, values, p_kill, dn, c3, p0):
         """用"移除后的收益下降"作为边际贡献的近似（Shapley 的一阶近似）。
 
         贡献低于 (均值 × SHAPLEY_KEEP) 的机被移除，然后尝试二次分配。
@@ -148,8 +152,9 @@ class GSShapley(AlgoBase):
             if count[j] <= 1:
                 contrib[k] = np.inf                    # 独占目标的机不移除
                 continue
-            P_all = 1 - (1 - p_kill[j]) ** count[j]
-            P_wo = 1 - (1 - p_kill[j]) ** (count[j] - 1)
+            q = 1.0 - p0[j]
+            P_all = 1 - q * (1 - p_kill[j]) ** count[j]
+            P_wo = 1 - q * (1 - p_kill[j]) ** (count[j] - 1)
             contrib[k] = values[j] * (P_all - P_wo) - self.LAMBDA_COST * dn[i, j]
         thr = np.mean(contrib[np.isfinite(contrib)]) * self.SHAPLEY_KEEP if np.any(
             np.isfinite(contrib)) else -np.inf

@@ -165,10 +165,14 @@ class GaIap(AlgoBase):
                     allow[eidx[uid]] = True
 
         cap = np.where(allow, quotas, 0)
+        # 【V2-P2-3】在途可见：配额上限按还差几架收紧；p0 作为毁伤起点
+        p0 = state.effective_p0()
+        cap = np.minimum(cap, state.remaining_quota(
+            model, lambda e: state.enemies[e].p_kill))
 
         def evaluate(C: np.ndarray):
             counts = C.astype(float)
-            P = 1 - (1 - p_kill)[None, :] ** counts
+            P = 1 - (1 - p0)[None, :] * (1 - p_kill)[None, :] ** counts
             f1 = -(P * values).sum(axis=1)
             f2 = counts.sum(axis=1)
             over = np.maximum(f2 - m, 0)                               # 超资源池

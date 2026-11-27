@@ -37,6 +37,9 @@ class RandomFeasible(AlgoBase):
 
         values, p_kill, epos = state.enemy_matrix()
         quotas = np.array([model.quota(p, model.kill_threshold) for p in p_kill])
+        # 【V2-P2-3】在途可见
+        quotas = np.minimum(quotas, state.remaining_quota(
+            model, lambda e: state.enemies[e].p_kill))
 
         order = rng.permutation(len(eids))
         fpos = state.pool_matrix()

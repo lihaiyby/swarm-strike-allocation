@@ -41,6 +41,11 @@ class MyopicOpt(AlgoBase):
 
         values, p_kill, epos = state.enemy_matrix()
         quotas = np.array([model.quota(p, model.kill_threshold) for p in p_kill])
+        # 【V2-P2-3】在途可见：已覆盖的部分不再计入需求
+        need = state.remaining_quota(model, lambda e: state.enemies[e].p_kill)
+        quotas = np.minimum(quotas, need)
+        if quotas.sum() == 0:
+            return X
         budget = len(fids)
 
         # 只读 state，调框架的配额；背包本身是纯优化工具，不含毁伤/约束公式

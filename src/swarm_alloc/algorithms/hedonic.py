@@ -68,7 +68,9 @@ class Hedonic(AlgoBase):
         util = np.full((len(ctx.fids), len(gids)), _NEG)
         for k, g in enumerate(gids):
             js = gmembers[g]
+            # 【V2-P2-3】单架次有效收益 = v·p·(1-p0)
             u = (ctx.values[js][None, :] * ctx.p_kill[js][None, :]
+                 * (1.0 - ctx.p0[js])[None, :]
                  - self.LAMBDA_COST * ctx.dn[:, js])
             u = np.where(ctx.c3[:, js], u, _NEG)
             util[:, k] = u.max(axis=1)
@@ -104,7 +106,9 @@ class Hedonic(AlgoBase):
                 continue
             j_arr = np.array([s[0] for s in slots])
             s_arr = np.array([s[1] for s in slots])
-            marg = ctx.values[j_arr] * ctx.p_kill[j_arr] * (1 - ctx.p_kill[j_arr]) ** s_arr
+            marg = (ctx.values[j_arr] * ctx.p_kill[j_arr]
+                    * (1 - ctx.p0[j_arr])
+                    * (1 - ctx.p_kill[j_arr]) ** s_arr)
             score = marg[None, :] - self.LAMBDA_COST * ctx.dn[rows][:, j_arr]
             ok = ctx.c3[rows][:, j_arr]
             score = np.where(ok, score, _NEG)

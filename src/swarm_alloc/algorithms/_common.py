@@ -12,7 +12,7 @@ class Ctx:
     """一次 solve 调用所需的全部静态信息。"""
 
     __slots__ = ("eids", "fids", "values", "p_kill", "quotas", "cap",
-                 "c3", "dist", "dn", "epos", "fpos", "eidx")
+                 "c3", "dist", "dn", "epos", "fpos", "eidx", "p0")
 
     def __init__(self, **kw):
         for k, v in kw.items():
@@ -20,7 +20,13 @@ class Ctx:
 
 
 def prepare(state, model) -> Ctx | None:
-    """把态势解包成算法好用的形式；若当前无可打目标返回 None。"""
+    """把态势解包成算法好用的形式；若当前无可打目标返回 None。
+
+    【V2-P2-3】在途可见：
+    - ``cap`` = min(配额, **还差几架**)——已覆盖的部分不再重复派兵；
+    - ``p0``  = 每个目标的在途累积期望毁伤，作为边际收益的起点。
+    v1 口径下 ``remaining_quota == 配额``、``p0 == 0``，行为与旧版一致。
+    """
     eids, fids = state.enemy_ids, state.pool_ids
     if not eids or not fids:
         return None
@@ -38,6 +44,9 @@ def prepare(state, model) -> Ctx | None:
     allowed = {u for g in kept for u in g.member_ids}
     cap = np.array([int(quotas[j]) if eids[j] in allowed else 0
                     for j in range(len(eids))], dtype=int)
+    # 在途已覆盖的部分不再派
+    need = state.remaining_quota(model, lambda e: state.enemies[e].p_kill)
+    cap = np.minimum(cap, need)
     if cap.sum() == 0:
         return None
 
@@ -45,7 +54,8 @@ def prepare(state, model) -> Ctx | None:
     dn = dist / (np.linalg.norm(epos, axis=1).max() + 1e-9)
     return Ctx(eids=eids, fids=fids, values=values, p_kill=p_kill,
                quotas=quotas, cap=cap, c3=state.c3_allowed(), dist=dist,
-               dn=dn, epos=epos, fpos=fpos, eidx=eidx)
+               dn=dn, epos=epos, fpos=fpos, eidx=eidx,
+               p0=state.effective_p0())
 
 
 def repair_c2(X, cap, dist, c3):
@@ -92,7 +102,17 @@ def fill_empty_targets(X, cap, dist, c3):
     return X
 
 
-def marginal(values, p_kill, count):
-    """第 count[j]+1 架对目标 j 的边际期望收益。"""
-    return values * ((1.0 - (1.0 - p_kill) ** (count + 1))
-                     - (1.0 - (1.0 - p_kill) ** count))
+def marginal(values, p_kill, count, p0=None):
+    """再派 **1 架**对目标 j 的边际期望收益。
+
+    【V2-P2-3】``p0`` 是在途累积毁伤（起点）。含 ``p0`` 时：
+    ``P(k) = 1 - (1-p0)·(1-p)^k``，边际 = ``P(count+1) - P(count)``。
+    ``p0=None/0`` 时退化为旧式 ``1-(1-p)^k``。
+    """
+    if p0 is None:
+        base = 1.0
+    else:
+        base = 1.0 - np.asarray(p0, dtype=float)
+    a = 1.0 - base * (1.0 - p_kill) ** (count + 1)
+    b = 1.0 - base * (1.0 - p_kill) ** count
+    return values * (a - b)

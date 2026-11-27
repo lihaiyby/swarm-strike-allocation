@@ -75,6 +75,10 @@ class DBSCANCoalition(AlgoBase):
         allowed_targets = {u for g in kept for u in g.member_ids}
         cap = np.array([int(quotas[j]) if eids[j] in allowed_targets else 0
                         for j in range(len(eids))], dtype=int)
+        # 【V2-P2-3】在途已覆盖的部分不再派；p0 作为边际收益起点
+        p0 = state.effective_p0()
+        cap = np.minimum(cap, state.remaining_quota(
+            model, lambda e: state.enemies[e].p_kill))
         if cap.sum() == 0:
             return X
 
@@ -90,9 +94,9 @@ class DBSCANCoalition(AlgoBase):
             cand = (~used)[:, None] & (count[None, :] < cap[None, :]) & c3
             if not cand.any():
                 break
-            # 每个目标的边际毁伤收益
-            gain = values * ((1.0 - (1.0 - p_kill) ** (count + 1))
-                             - (1.0 - (1.0 - p_kill) ** count))
+            # 每个目标的边际毁伤收益（【V2-P2-3】含在途起点 p0）
+            gain = values * ((1.0 - (1.0 - p0) * (1.0 - p_kill) ** (count + 1))
+                             - (1.0 - (1.0 - p0) * (1.0 - p_kill) ** count))
             gain = np.where(count < cap, gain, -np.inf)
             # 每个目标可用的最近机
             d_masked = np.where(cand, dn, np.inf)

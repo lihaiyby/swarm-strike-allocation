@@ -71,7 +71,7 @@ class TRCBBA(AlgoBase):
                 cand = (~used)[:, None] & (count[None, :] < ctx.cap[None, :]) & ctx.c3
                 if not cand.any():
                     break
-                gain = marginal(ctx.values, ctx.p_kill, count)
+                gain = marginal(ctx.values, ctx.p_kill, count, ctx.p0)
                 gain = np.where(count < ctx.cap, gain, -np.inf)
                 mask = np.zeros(len(ctx.eids), dtype=bool)
                 mask[js] = True

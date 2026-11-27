@@ -68,7 +68,7 @@ class SSDRCBBA(AlgoBase):
             cand = (~used)[:, None] & (count[None, :] < ctx.cap[None, :]) & ctx.c3
             if not cand.any():
                 break
-            gain = marginal(ctx.values, ctx.p_kill, count)
+            gain = marginal(ctx.values, ctx.p_kill, count, ctx.p0)
             gain = np.where(count < ctx.cap, gain, -np.inf)
 
             dm = np.where(cand, ctx.dn, np.inf)
