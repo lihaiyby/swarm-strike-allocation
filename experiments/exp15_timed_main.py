@@ -99,7 +99,9 @@ def main():
     # 综合分（方案 A，基线 greedy）
     try:
         from swarm_alloc.evaluation.score import score_relative
-        sc = score_relative(df, baseline="greedy", time_limit_s=1.0)
+        # 用 ratio_of_means：b 在弱基线场景可能接近 0，逐场景比值会被放大（实测 r_b 高到 14.8）
+        sc = score_relative(df, baseline="greedy", time_limit_s=1.0,
+                            agg="ratio_of_means")
         print("\n" + "=" * 110)
         print("[2] 综合分（方案 A，基线 greedy = 1.000；e 用单次平均耗时，时限 1 s）")
         print("=" * 110)
