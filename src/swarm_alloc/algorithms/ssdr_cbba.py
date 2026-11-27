@@ -60,6 +60,15 @@ class SSDRCBBA(AlgoBase):
                     threat_of[eidx[u]] = float(g.threat)
         risk = np.array([threat_of.get(j, 0.0) for j in range(len(ctx.eids))])
 
+        # 【V2-P2-3 适配】负载项要用"全局进度"，而不是"本回合剩余配额"。
+        #   分母 = 本回合可派量 + 已在途架数（= 原始配额需求）；
+        #   分子 = 本回合已派 + 已在途。
+        #   否则每回合 load 从 0 重新计，价格会错误地"过低→过高"跳变。
+        n_inf = np.array([state.inflight_count_of(e) for e in ctx.eids], dtype=float)
+        n_inf = np.minimum(n_inf, ctx.quotas)          # 截到配额内，避免超配额的在途拉高分母
+        demand_all = max(int(ctx.quotas[ctx.cap > 0].sum()), 1)
+        base_committed = float(n_inf.sum())
+
         total = max(int(ctx.cap.sum()), 1)
         count = np.zeros(len(ctx.eids), dtype=int)
 
@@ -78,8 +87,8 @@ class SSDRCBBA(AlgoBase):
             if not ok.any():
                 break
 
-            # 影子价格：风险 + 航程 + 负载（负载项随已用兵力比例上升）
-            load = X.sum() / total
+            # 影子价格：风险 + 航程 + 负载（负载 = 全局已投入 / 全局需求）
+            load = (base_committed + X.sum()) / demand_all
             price = (self.ALPHA_RISK * risk
                      + self.BETA_RANGE
                      + self.GAMMA_LOAD * load)

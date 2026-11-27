@@ -106,6 +106,10 @@ class CBBAYe(AlgoBase):
         allowed = {u for g in kept for u in g.member_ids}
         cap = np.array([int(quotas[j]) if eids[j] in allowed else 0
                         for j in range(len(eids))], dtype=int)
+        # 【V2-P2-3】在途可见：已覆盖的部分不再派；p0 作为奖励计算的起点
+        p0 = state.effective_p0()
+        cap = np.minimum(cap, state.remaining_quota(
+            model, lambda e: state.enemies[e].p_kill))
         if cap.sum() == 0:
             return X
 
