@@ -1,3 +1,6 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# v1 场景备份（仅本地保留，不入库）
+data/_v1_scenes/
