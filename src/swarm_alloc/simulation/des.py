@@ -246,6 +246,14 @@ def simulate_timed(scene, algo, model, scfg, etcfg, fcfg=None,
         groups = topsis(list(tracker.groups.values()), active)
         st = State(t=now, enemies=dict(active), groups=groups,
                    pool=dict(pool), frozen_ids=[])
+        # 【V2-P2-3】把在途打击暴露给算法（谁在飞、还有多久到、预计造成多少毁伤）
+        if inflight:
+            for ta, _fid, e2, p2 in inflight:
+                st.inflight_count[e2] = st.inflight_count.get(e2, 0) + 1
+                st.inflight_p[e2] = 1.0 - (1.0 - st.inflight_p.get(e2, 0.0)) * (1.0 - p2)
+                st.inflight_arrive.setdefault(e2, []).append(ta)
+            for e2 in st.inflight_arrive:
+                st.inflight_arrive[e2].sort()
         if model.grouping_on:
             from ..model.grouping import build_friendly_groups
             fid2g, g2e, _ = build_friendly_groups(st, model)

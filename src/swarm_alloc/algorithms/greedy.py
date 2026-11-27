@@ -26,13 +26,16 @@ class Greedy(AlgoBase):
 
         values, p_kill, epos = state.enemy_matrix()
         quotas = np.array([model.quota(p, model.kill_threshold) for p in p_kill])
+        # 【V2-P2-3】在途可见：还差几架才够配额（在途架数已扣除）
+        #   v1 口径下 inflight_* 恒为空 → need == quotas，行为与旧版逐位一致
+        need = state.remaining_quota(model, lambda e: state.enemies[e].p_kill)
         group_of_enemy = {uid: g.id for g in state.groups for uid in g.member_ids}
 
-        # 各群配额需求与群价值（只统计仍在空的敌机）
+        # 各群配额需求与群价值（只统计仍在空的敌机；需求用"还差几架"）
         demand, gvalue = {}, {}
         for g in state.groups:
             js = [eidx[uid] for uid in g.member_ids if uid in eidx]
-            demand[g.id] = int(quotas[js].sum()) if js else 0
+            demand[g.id] = int(need[js].sum()) if js else 0
             gvalue[g.id] = float(values[js].sum()) if js else 0.0
 
         kept = model.select_groups(state.groups, demand, len(fids), gvalue)
@@ -57,8 +60,8 @@ class Greedy(AlgoBase):
             members = np.argsort(d)[:take]
             available[members] = False
 
-            # 群内槽位展开：目标 j 需要 quotas[j] 架，指派最近的编组内无人机
-            slots = [j for j in js for _ in range(int(quotas[j]))]
+            # 群内槽位展开：目标 j 还差 need[j] 架，指派最近的编组内无人机
+            slots = [j for j in js for _ in range(int(need[j]))]
             for s, j in enumerate(slots[: len(members)]):
                 dists = np.linalg.norm(fpos[members] - epos[j], axis=1)
                 li = int(np.argmin(dists))

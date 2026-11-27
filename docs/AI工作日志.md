@@ -53,6 +53,38 @@
 
 ## 日志
 
+### 2026-11-27 17:10 · 在途可见（V2-P2-3）：时间强耦合补齐，歼灭 +12.9%
+
+**任务**：让算法能看到"已派出、未结算"的在途打击（老师建议第 4 条的最后一块）。
+
+**改动**
+
+| 文件 | 类型 | 说明 |
+|---|---|---|
+| `src/swarm_alloc/simulation/state.py` | 修改 | 增 `inflight_count/inflight_p/inflight_arrive` + `remaining_quota()/effective_p0()/inflight_count_of()/inflight_p_of()/inflight_ids` |
+| `src/swarm_alloc/simulation/des.py` | 修改 | 决策前注入在途队列 |
+| `src/swarm_alloc/algorithms/greedy.py` | 修改 | 按 `remaining_quota()` 派兵（只补差额） |
+| `tests/test_state_inflight.py` | 新增 | 5 个单测 |
+| 四件套 | 修改 | 状态与字段同步 |
+
+**验证**
+
+- `pytest` → **90 passed**
+- A/B（easy 8 场景，greedy）：
+  A 不看在途 → 歼灭 89.6、突防率 27.4%、a_kill 453.5、b 0.345
+  **B 看得到在途 → 歼灭 101.2、突防率 17.9%、a_kill 506.4、b 0.480**
+- 即：歼灭 **+12.9%**、突防 **−34.6%**、b **+39%**
+
+**结论**
+
+"事件驱动"不等于"强耦合"。只有把在途信息交给算法，它才不会对同一目标重复派兵；
+仅靠框架兜底去重（到饱和才拦）会漏掉"部分覆盖"的情形，浪费约 1/8 的兵力。
+
+**提交**：待填
+**推送**：待填
+
+---
+
 ### 2026-11-22 17:50 · 时序口径首轮 12 算法对比：冠军易主（影子价格 CBBA）
 
 **任务**：在时序口径（`simulate_timed`，engagement 结束）下跑全算法对比（V2-P8 前哨）。
