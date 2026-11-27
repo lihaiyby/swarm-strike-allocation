@@ -36,10 +36,43 @@ class State:
     def pool_ids(self) -> list:
         return sorted(self.pool.keys())
 
+    # ---- 【V2-P6】紧迫性加权（老师建议 8：分配要考虑速度与方向，不能只看价值）
+    urgency_beta: float = 0.0      # >0 时按"径向接近速率"放大目标在算法眼中的价值
+    defense_radius: float = 700.0  # 仅用于计算 ETA（保留给未来扩展）
+
+    def _urgency(self) -> np.ndarray:
+        """每个目标的紧迫性 ∈ [0,1]：径向接近速率（含方向）在当前目标间的归一化。
+
+        朝基地飞得越快 → 越紧迫。全体同向时归一化后无差异，返回全 0.5（中性）。
+        该值**只影响算法的决策价值**，不影响评分（评分仍用真实 `v_j`）。
+        """
+        eids = self.enemy_ids
+        n = len(eids)
+        if n == 0:
+            return np.zeros(0)
+        vr = np.zeros(n)
+        for j, eid in enumerate(eids):
+            u = self.enemies[eid]
+            r = np.asarray(u.pos, dtype=float)
+            rn = float(np.linalg.norm(r))
+            if rn > 1e-9:
+                vr[j] = -float(np.dot(np.asarray(u.vel, dtype=float), r / rn))
+        lo, hi = float(vr.min()), float(vr.max())
+        if hi - lo < 1e-9:
+            return np.full(n, 0.5)
+        return (vr - lo) / (hi - lo)
+
     def enemy_matrix(self) -> tuple:
-        """返回 (values, p_kill, positions)，按 enemy_ids 顺序。"""
+        """返回 (values, p_kill, positions)，按 enemy_ids 顺序。
+
+        【V2-P6】``urgency_beta > 0`` 时，``values`` 变为"紧迫性加权后的决策价值"：
+        ``v_eff = v · (1 + β·urgency)``；``urgency_beta = 0``（默认）时与旧版逐位一致。
+        """
         us = [self.enemies[i] for i in self.enemy_ids]
-        return (np.array([u.value for u in us], dtype=float),
+        vals = np.array([u.value for u in us], dtype=float)
+        if self.urgency_beta > 0 and len(vals):
+            vals = vals * (1.0 + self.urgency_beta * self._urgency())
+        return (vals,
                 np.array([u.p_kill for u in us], dtype=float),
                 np.vstack([u.pos for u in us]))
 

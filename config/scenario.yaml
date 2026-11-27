@@ -30,6 +30,21 @@ seeds: [1000, 1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009,
 perception:
   eps_m: 550          # k-distance 图标定（results/eps_calibration.png，拐点中位数 553m）
   min_samples: 3
+  # 【V2-P6】威胁评估特征（老师建议第 8 条：要综合考虑价值、速度、**速度方向**）
+  #   value   群总价值 Σv                        （越大越威胁）
+  #   speed   群平均速度                          （越大越威胁）
+  #   dist    群到基地最近距离                    （越小越威胁）
+  #   closure **平均径向接近速率**（含方向）      （越大越威胁）
+  #   eta     **最早突防剩余时间**（含方向+位置） （越小越威胁）
+  # 熵权法会自动把"无区分度"的特征降权，所以多放几个不会破坏结果。
+  # 旧口径为 [value, speed, dist]；改用 [value, closure, eta] 即"综合考虑速度与方向"。
+  threat:
+    features: [value, closure, eta]
+    defense_radius_m: 700   # 仅 eta 使用（也可省略，缺省读 battlefield）
+    # 【V2-P6】紧迫性加权系数 β：算法看到的目标价值 = v·(1 + β·urgency)
+    #   urgency 由"径向接近速率"在当前目标间归一化得到（含速度方向）。
+    #   0 = 关闭（默认，结果与旧版一致）；实测 β=0.6 对部分算法有效（见进度记录）。
+    urgency_beta: 0.0
 
 # 编制档位（P2.1，2026-10-29 决策 D1 = 保守方案）
 # 我方兵力 = ratio × n。3.0 为原方案（easy，默认、向后兼容）；

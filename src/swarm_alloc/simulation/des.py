@@ -32,7 +32,8 @@ from collections import defaultdict
 import numpy as np
 
 from ..perception.dbscan_inc import GroupTracker
-from ..perception.topsis import topsis
+from ..perception.topsis import features_from_config, topsis
+
 from ..evaluation.b_metric import group_elimination_rate
 from .simulate import BattleResult, _summarize_time
 from .state import State
@@ -120,6 +121,11 @@ def simulate_timed(scene, algo, model, scfg, etcfg, fcfg=None,
     # t_scale：战局时长倍率（实验用；敌机速度不变，只把 T 与其派生的波次时刻同步放大）
     T = float(scene.T) * float(t_scale)
     defense_r = scfg["battlefield"]["defense_radius_m"]
+    # 【V2-P6】威胁特征集（配置可切；缺省为 v1 口径）
+    threat_cfg = features_from_config(scfg)
+    # 【V2-P6】紧迫性加权系数（0 = 关闭；>0 时算法看到的价值 = v·(1+β·urgency)）
+    URGENCY_BETA = float(((scfg.get("perception") or {}).get("threat") or {})
+                         .get("urgency_beta", 0.0))
     tracker = GroupTracker(scfg["perception"]["eps_m"], scfg["perception"]["min_samples"])
     lethality = {t["name"]: t["lethality"] for t in etcfg["types"] if t.get("lethality")}
     wave_times = [f * T for f in scfg["waves"]["times_frac"]]
@@ -243,9 +249,10 @@ def simulate_timed(scene, algo, model, scfg, etcfg, fcfg=None,
         eids = list(active.keys())
         fids = list(pool.keys())
         tracker.update(eids, np.vstack([active[i].pos for i in eids]))
-        groups = topsis(list(tracker.groups.values()), active)
+        groups = topsis(list(tracker.groups.values()), active, *threat_cfg)
         st = State(t=now, enemies=dict(active), groups=groups,
-                   pool=dict(pool), frozen_ids=[])
+                   pool=dict(pool), frozen_ids=[],
+                   urgency_beta=URGENCY_BETA, defense_radius=defense_r)
         # 【V2-P2-3】把在途打击暴露给算法（谁在飞、还有多久到、预计造成多少毁伤）
         if inflight:
             for ta, _fid, e2, p2 in inflight:

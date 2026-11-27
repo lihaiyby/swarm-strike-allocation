@@ -20,7 +20,8 @@ import numpy as np
 
 from ..evaluation.b_metric import group_elimination_rate
 from ..perception.dbscan_inc import GroupTracker
-from ..perception.topsis import topsis
+from ..perception.topsis import features_from_config, topsis
+
 from .state import State
 from .settle import battle_damage
 
@@ -95,6 +96,11 @@ def simulate(scene, algo, model, scfg, etcfg, realloc_on_loss: bool = True,
     tracker = GroupTracker(scfg["perception"]["eps_m"], scfg["perception"]["min_samples"])
     lethality = {t["name"]: t["lethality"] for t in etcfg["types"] if t.get("lethality")}
     defense_r = scfg["battlefield"]["defense_radius_m"]
+    # 【V2-P6】威胁特征集（配置可切；缺省为 v1 口径）
+    threat_cfg = features_from_config(scfg)
+    # 【V2-P6】紧迫性加权系数（0 = 关闭；>0 时算法看到的价值 = v·(1+β·urgency)）
+    URGENCY_BETA = float(((scfg.get("perception") or {}).get("threat") or {})
+                         .get("urgency_beta", 0.0))
 
     pool = {fu.id: fu for fu in scene.friendly}
     active = {}                                   # enemy_id -> EnemyUnit（副本，位置随时间推进）
@@ -162,10 +168,11 @@ def simulate(scene, algo, model, scfg, etcfg, realloc_on_loss: bool = True,
             eids = sorted(active)
             epos = np.vstack([active[i].pos for i in eids])
             tracker.update(eids, epos)
-            groups = topsis(list(tracker.groups.values()), active)
+            groups = topsis(list(tracker.groups.values()), active, *threat_cfg)
 
             state = State(t=t, enemies=dict(active), groups=groups,
-                          pool=dict(pool), frozen_ids=[])
+                          pool=dict(pool), frozen_ids=[],
+                   urgency_beta=URGENCY_BETA, defense_radius=defense_r)
             # ---- 【批注 B3】先在 solve 之前建好分组，让算法能按组规划
             if model.grouping_on:
                 from ..model.grouping import build_friendly_groups
